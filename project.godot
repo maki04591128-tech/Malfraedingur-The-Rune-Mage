@@ -22,3 +22,10 @@ config/icon="res://icon.svg"
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+
+[autoload]
+
+EventBus="*res://autoload/event_bus.gd"
+Lexicon="*res://autoload/lexicon.gd"
+GameState="*res://autoload/game_state.gd"
+SpellEngine="*res://autoload/spell_engine.gd"
