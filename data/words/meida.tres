@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="WordResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/words/word_resource.gd" id="1_word"]
+
+[resource]
+script = ExtResource("1_word")
+id = "meida"
+word_class = "effect"
+gloss = {
+"en": "harm",
+"ja": "害せよ"
+}
+reading_kana = "メイザ"
+ipa = "ˈmeiː.ða"
+gender = ""
+tier = 1
+comprehension_default = 0
+inflection = {}
+governs_case = "acc"
+function_role = ""
+discovery = PackedStringArray("inscription", "drop")
+element = {}
+source = "CV s.v. meiða; Zoëga"
+confidence = "verified"
+verified = false

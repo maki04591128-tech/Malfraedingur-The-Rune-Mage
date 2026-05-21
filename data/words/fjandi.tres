@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="WordResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/words/word_resource.gd" id="1_word"]
+
+[resource]
+script = ExtResource("1_word")
+id = "fjandi"
+word_class = "target"
+gloss = {
+"en": "enemy",
+"ja": "敵"
+}
+reading_kana = "フィアンディ"
+ipa = "ˈfjan.di"
+gender = "masculine"
+tier = 1
+comprehension_default = 0
+inflection = {
+"sg": {
+"acc": "fjanda",
+"nom": "fjandi"
+}
+}
+governs_case = ""
+function_role = ""
+discovery = PackedStringArray("inscription")
+element = {}
+source = "CV s.v. fjándi"
+confidence = "verified"
+verified = false

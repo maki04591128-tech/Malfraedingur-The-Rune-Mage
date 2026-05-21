@@ -15,6 +15,18 @@ run/main_scene="uid://bwpsl5q428hot"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
+[autoload]
+
+EventBus="*res://autoload/event_bus.gd"
+Lexicon="*res://autoload/lexicon.gd"
+GameState="*res://autoload/game_state.gd"
+SpellEngine="*res://autoload/spell_engine.gd"
+
+[internationalization]
+
+locale/translations=PackedStringArray("res://data/i18n/ja.po")
+locale/fallback="ja"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
@@ -22,10 +34,3 @@ config/icon="res://icon.svg"
 [rendering]
 
 rendering_device/driver.windows="d3d12"
-
-[autoload]
-
-EventBus="*res://autoload/event_bus.gd"
-Lexicon="*res://autoload/lexicon.gd"
-GameState="*res://autoload/game_state.gd"
-SpellEngine="*res://autoload/spell_engine.gd"

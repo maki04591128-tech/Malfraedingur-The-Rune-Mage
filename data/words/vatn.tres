@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="WordResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/words/word_resource.gd" id="1_word"]
+
+[resource]
+script = ExtResource("1_word")
+id = "vatn"
+word_class = "element"
+gloss = {
+"en": "water",
+"ja": "水"
+}
+reading_kana = "ヴァトン"
+ipa = "ˈvatn̥"
+gender = "neuter"
+tier = 1
+comprehension_default = 0
+inflection = {
+"sg": {
+"acc": "vatn",
+"nom": "vatn"
+}
+}
+governs_case = ""
+function_role = ""
+discovery = PackedStringArray("drop")
+element = {
+"chaos_member": true,
+"cycle": "strong_vs:eldr, weak_vs:jorth"
+}
+source = "CV s.v. vatn"
+confidence = "verified"
+verified = false

@@ -1,0 +1,53 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: malfraedingur\n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: ja\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# DL1: UI 文字列は全て翻訳キー経由 (tr())。ハードコード禁止 (docs/04 §1)。
+# INC-0 は JA のみで可。EN 完備は INC-5/6 のリリースゲート (docs/02)。
+
+# === タイトル / メニュー ===
+msgid "ui.app.title"
+msgstr "Málfræðingur"
+
+msgid "ui.menu.start"
+msgstr "はじめる"
+
+msgid "ui.menu.continue"
+msgstr "つづける"
+
+msgid "ui.menu.settings"
+msgstr "設定"
+
+msgid "ui.menu.exit"
+msgstr "おわる"
+
+# === spell_lab (INC-1 で使う) ===
+msgid "spell_lab.title"
+msgstr "呪文ラボ"
+
+msgid "spell_lab.cast_button"
+msgstr "詠唱"
+
+msgid "spell_lab.batch_button"
+msgstr "%d 回シミュレート"
+
+msgid "spell_lab.comprehension_slider"
+msgstr "理解度 C"
+
+# === GrammarReport の汎用文言 ===
+msgid "grammar.case_agreement.fail"
+msgstr "格が一致していません"
+
+msgid "grammar.word_order.fail"
+msgstr "語順が正準形ではありません"
+
+msgid "grammar.recommended_format"
+msgstr "%s → %s ?"
