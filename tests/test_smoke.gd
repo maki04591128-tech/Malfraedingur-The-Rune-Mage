@@ -1009,6 +1009,65 @@ func _ready() -> void:
 	GameState.descend_floor()
 	r.assert_eq(GameState.floor_index, 3, "GameState: descend x2 → floor 3")
 
+	# INC-3.15: 範囲語・方向語が minor finding にとどまる（02 v0.9 §3 INC-3 / 09 §8.1）
+	# 仕様: INC-3 ではデータには載せるが Validator はコア違反扱いしない、SpatialResolver の
+	#       advisory_findings に入る、grammar_report.overall_pass は維持される
+	if ms != null and ft1 != null and ruleset != null:
+		ms.load_floor(ft1, DSEED.new(3838, 0, 1))
+		# 起点部屋付近に敵を直挿入
+		ms.map_data.enemies.append({
+			"id": "draugr_lesser",
+			"pos": ms.player_pos + Vector2i(1, 0),
+			"hp": 18, "atk": 6, "max_hp": 18,
+		})
+		ms._recompute_fov()
+		var ctx3 = SpatialContext.from_map_state(ms)
+		var tokens_dir = [
+			{"word_id": "fram", "case": ""},      # 方向語
+			{"word_id": "meida", "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var cast_dir: CastResult = engine.cast(tokens_dir, ruleset, {"spatial_context": ctx3})
+		r.assert_not_null(cast_dir, "INC-3.15: fram + meiða fjanda 詠唱が結果を返す")
+		if cast_dir != null:
+			# Validator は方向語をコア違反扱いしない → overall_pass は格・語順だけで決まる
+			r.assert_not_null(cast_dir.grammar_report, "INC-3.15: grammar_report populated")
+			# fjandi の格は acc で OK、meiða(動詞)+fjanda(対格) で文法 OK のはず
+			# 方向語の存在自体は Validator のコア違反にならない
+			r.assert_true(cast_dir.grammar_report.overall_pass, "INC-3.15: 方向語付きでも overall_pass=true (minor finding にとどまる)")
+			# SpatialResolver が方向語を認識して TargetSet に記録
+			r.assert_not_null(cast_dir.target_set, "INC-3.15: target_set populated")
+			if cast_dir.target_set != null:
+				r.assert_eq(cast_dir.target_set.used_direction_word, "fram", "INC-3.15: target_set.used_direction_word = fram")
+
+		# 範囲語 + 方向語の組み合わせ
+		var tokens_range = [
+			{"word_id": "naer", "case": ""},      # 範囲語
+			{"word_id": "fram", "case": ""},      # 方向語
+			{"word_id": "meida", "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var cast_range: CastResult = engine.cast(tokens_range, ruleset, {"spatial_context": ctx3})
+		if cast_range != null and cast_range.target_set != null:
+			r.assert_eq(cast_range.target_set.used_range_word, "naer", "INC-3.15: target_set.used_range_word = naer")
+			r.assert_eq(cast_range.target_set.used_direction_word, "fram", "INC-3.15: target_set.used_direction_word = fram (組み合わせ)")
+		if cast_range != null and cast_range.grammar_report != null:
+			r.assert_true(cast_range.grammar_report.overall_pass, "INC-3.15: 範囲語+方向語でも overall_pass=true (INC-3 minor finding 暫定)")
+
+		# 範囲語が複数（INC-3 では advisory_findings に range_conflict が入るが minor）
+		var tokens_conflict = [
+			{"word_id": "naer", "case": ""},
+			{"word_id": "fjarri", "case": ""},
+			{"word_id": "meida", "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var cast_conflict: CastResult = engine.cast(tokens_conflict, ruleset, {"spatial_context": ctx3})
+		if cast_conflict != null and cast_conflict.target_set != null:
+			r.assert_true(cast_conflict.target_set.advisory_findings.has("range_conflict"), "INC-3.15: nær+fjarri で range_conflict が advisory_findings に入る (minor)")
+		if cast_conflict != null and cast_conflict.grammar_report != null:
+			# range_conflict は advisory（INC-3 では Validator にも Resolver にも反映されない、minor）
+			r.assert_true(cast_conflict.grammar_report.overall_pass, "INC-3.15: range_conflict があっても overall_pass=true (INC-3 暫定、INC-3.5 で重篤化予定)")
+
 	# Cleanup
 	if ms != null:
 		ms.reset()

@@ -175,6 +175,26 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_open_spell_input()
 		KEY_ENTER:
 			_try_descend_stairs()
+		# --- INC-3 検証用デバッグキー（INC-3.5 以降は削除候補） ---
+		KEY_H:
+			# DEBUG: 致命的ダメージで死亡 → _trigger_rewind("death")
+			_log("[color=#888]DEBUG: take_damage(999) → 死亡テスト[/color]")
+			if GameState.take_damage(999):
+				_trigger_rewind("death")
+			_update_hud()
+		KEY_T:
+			# DEBUG: 大量時間消費で時間切れ → _trigger_rewind("timeout")
+			_log("[color=#888]DEBUG: advance_world_time(999) → 時間切れテスト[/color]")
+			if GameState.advance_world_time(999.0):
+				_trigger_rewind("timeout")
+			_update_hud()
+		KEY_G:
+			if MapState.map_data != null and MapState.map_data.stairs_down_pos.x >= 0:
+				MapState.player_pos = MapState.map_data.stairs_down_pos
+				MapState._recompute_fov()
+				_log("[color=#888]DEBUG: teleport to stairs (%d, %d)[/color]" % [MapState.player_pos.x, MapState.player_pos.y])
+				queue_redraw()
+				_update_hud()
 
 
 func _player_action_move(dx: int, dy: int) -> void:
