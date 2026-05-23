@@ -1,0 +1,11 @@
+{
+  "_comment": "INC-2 必須シナリオ C1〜C5（戦闘版）。combat_test.tscn から呼び出し可能にする予定（v0.3 で UI 連携）。",
+  "_doc": "08_INC2検証仕様.md §3 を正とする。各シナリオの expected_outcome は人手検証で見る。",
+  "scenarios": [
+    "c1_correct_kill_zako.json",
+    "c2_wrong_case_correct_loop.json",
+    "c3_zako_to_boss.json",
+    "c4_scaffold_max_beginner.json",
+    "c5_scaffold_none_master.json"
+  ]
+}

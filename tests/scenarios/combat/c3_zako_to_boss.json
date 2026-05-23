@@ -1,0 +1,22 @@
+{
+  "id": "C3",
+  "name": "C3 雑魚→ボス遷移",
+  "description": "雑魚撃破時にボスが出現し、雑魚より明らかにタフであることが体感できる。修飾語 mikill の有用性が分かる。",
+  "ruleset_id": "phase_intermediate",
+  "scaffold_level": "mid",
+  "c_override": 50.0,
+  "player_hp": 100.0,
+  "enemies": [
+    {"name": "雑魚 fjandi", "hp": 30.0, "atk": 8.0},
+    {"name": "ボス Helgrind 番人", "hp": 80.0, "atk": 15.0}
+  ],
+  "tokens": [
+    {"word_id": "meida", "case": ""},
+    {"word_id": "mikill", "case": "acc"},
+    {"word_id": "fjandi", "case": "acc"}
+  ],
+  "expected_outcome": {
+    "grammar_pass": true,
+    "human_check": "雑魚撃破時にボス出現が明確に分かる（v0.2 残課題: 演出強化）。mikill 修飾の威力 ×1.5 でボスにも効く"
+  }
+}

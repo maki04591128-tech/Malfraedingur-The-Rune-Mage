@@ -1,0 +1,16 @@
+{
+  "id": "C4",
+  "name": "C4 scaffold=max で初学者がボス到達",
+  "description": "phase_intro (scaffold=max, ライブプレビュー有効) で C=0 の初学者でも、5 分以内に雑魚を倒せるか。発見可能性の判定。",
+  "ruleset_id": "phase_intro",
+  "scaffold_level": "max",
+  "c_override": 0.0,
+  "player_hp": 100.0,
+  "enemies": [
+    {"name": "雑魚 fjandi", "hp": 30.0, "atk": 8.0}
+  ],
+  "tokens": [],
+  "expected_outcome": {
+    "human_check": "ライブプレビューの『✓ プレビュー: 文法 OK』を見ながら、説明なしで 5 分以内に雑魚撃破。発見可能性 (08 §4.1) の指標"
+  }
+}

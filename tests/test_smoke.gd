@@ -640,6 +640,154 @@ func _ready() -> void:
 		r.assert_true(rs_advanced.is_rule_enabled("modifier"), "phase_advanced: modifier enabled")
 		r.assert_true(rs_advanced.is_rule_enabled("condition_clause"), "phase_advanced: condition enabled")
 
+	# --- INC-2 v0.1: 戦闘層スケルトン ---
+
+	# Combatant の基本動作
+	var c1 := Combatant.new("Dummy", 100.0, {"fire": 0.5})
+	r.assert_not_null(c1, "Combatant.new() ok")
+	r.assert_eq(c1.hp, 100.0, "Combatant: 初期 HP = max_hp")
+	r.assert_true(c1.is_alive(), "Combatant: 初期は alive")
+	r.assert_eq(c1.take_damage(30.0), 30.0, "Combatant: 30 ダメ適用 = 30 戻り")
+	r.assert_eq(c1.hp, 70.0, "Combatant: HP 100→70")
+	r.assert_eq(c1.heal(10.0), 10.0, "Combatant: 10 回復 = 10 戻り")
+	r.assert_eq(c1.hp, 80.0, "Combatant: HP 70→80")
+	r.assert_eq(c1.heal(1000.0), 20.0, "Combatant: overheal は max_hp で頭打ち")
+	r.assert_eq(c1.hp, 100.0, "Combatant: 上限 100 clamp")
+	r.assert_eq(c1.take_damage(0.0), 0.0, "Combatant: 0 ダメ NOP")
+	r.assert_eq(c1.take_damage(-5.0), 0.0, "Combatant: 負ダメ NOP")
+	r.assert_eq(c1.take_damage(150.0), 100.0, "Combatant: 過剰ダメは max_hp で頭打ち")
+	r.assert_eq(c1.hp, 0.0, "Combatant: HP 0 になる")
+	r.assert_false(c1.is_alive(), "Combatant: HP 0 で死亡")
+	r.assert_eq(c1.resist_mult_for("fire"), 0.5, "Combatant: fire 耐性 0.5")
+	r.assert_eq(c1.resist_mult_for("water"), 1.0, "Combatant: 未定義属性は 1.0")
+	r.assert_eq(c1.resist_mult_for(""), 1.0, "Combatant: 空属性は 1.0")
+
+	# DamageCalculator: 通常命中
+	var fake_resolved := ResolvedEffect.new()
+	fake_resolved.effect_power = 12.0
+	fake_resolved.target_word_id = "fjandi"
+	fake_resolved.misfired = false
+	var target_c := Combatant.new("Enemy", 50.0, {})
+	var calc := DamageCalculator.compute(fake_resolved, target_c, {})
+	# v0.2: DAMAGE_SCALE=3.0 を全ダメに掛ける。12.0 × 3.0 = 36.0
+	r.assert_eq(calc["to_target"], 36.0, "DC: 命中 → to_target=36.0 (=12.0×DAMAGE_SCALE 3.0)")
+	r.assert_eq(calc["to_self"], 0.0, "DC: 命中 → to_self=0")
+	r.assert_false(calc["is_self_target"], "DC: 通常は is_self_target=false")
+
+	# DamageCalculator: 自爆 (control band)
+	var fake_misfired := ResolvedEffect.new()
+	fake_misfired.effect_power = 0.0
+	fake_misfired.self_damage = 5.0
+	fake_misfired.misfired = true
+	fake_misfired.misfire_category = "control"
+	fake_misfired.misfire_outcome = "self_damage"
+	fake_misfired.target_word_id = "fjandi"
+	var calc2 := DamageCalculator.compute(fake_misfired, target_c, {})
+	r.assert_eq(calc2["to_target"], 0.0, "DC: 自爆 → to_target=0")
+	# v0.2: self_damage 5.0 × DAMAGE_SCALE 3.0 = 15.0
+	r.assert_eq(calc2["to_self"], 15.0, "DC: 自爆 → to_self=15.0 (=5.0×3.0)")
+
+	# DamageCalculator: 自己対象 (sjalfr)
+	var fake_self := ResolvedEffect.new()
+	fake_self.effect_power = 8.0
+	fake_self.target_word_id = "sjalfr"
+	var calc3 := DamageCalculator.compute(fake_self, target_c, {})
+	r.assert_true(calc3["is_self_target"], "DC: sjalfr → is_self_target=true")
+	r.assert_eq(calc3["to_target"], 0.0, "DC: sjalfr → to_target=0")
+	r.assert_eq(calc3["to_self"], 8.0, "DC: sjalfr → to_self=8.0（自分に流れる）")
+
+	# DamageCalculator: 元素耐性
+	var fake_fire := ResolvedEffect.new()
+	fake_fire.effect_power = 10.0
+	fake_fire.target_word_id = "fjandi"
+	var fire_resistant := Combatant.new("FireResist", 50.0, {"fire": 0.5})
+	var calc4 := DamageCalculator.compute(fake_fire, fire_resistant, {"dominant_element": "fire"})
+	# v0.2: 10.0 × 0.5 (耐性) × 3.0 (DAMAGE_SCALE) = 15.0
+	r.assert_eq(calc4["to_target"], 15.0, "DC: fire 耐性 0.5 → 15.0 (=10×0.5×3.0)")
+
+	# DamageCalculator: 世界時間 Δ
+	r.assert_eq(DamageCalculator.compute_world_time_delta(2, 2), 3.0, "DC: Δ(2 語, tier_sum=2) = 2 + 1.0 = 3.0")
+	r.assert_eq(DamageCalculator.compute_world_time_delta(3, 4), 5.0, "DC: Δ(3 語, tier_sum=4) = 3 + 2.0 = 5.0")
+
+	# CombatSystem: 雑魚→ボス→FLOOR_CLEAR
+	var cs := CombatSystem.new()
+	var p_c := Combatant.new("Player", 100.0, {})
+	var zako := Combatant.new("Zako", 10.0, {})
+	var boss := Combatant.new("Boss", 20.0, {})
+	cs.start_floor(p_c, [zako, boss], [3.0, 5.0])
+	r.assert_eq(cs.state, CombatSystem.State.PLAYER_TURN, "CS: start で PLAYER_TURN")
+	r.assert_eq(cs.turn_count, 1, "CS: start で T=1")
+	r.assert_eq(cs.current_enemy_index, 0, "CS: start で current=0 (雑魚)")
+	r.assert_false(cs.is_over(), "CS: start で is_over=false")
+
+	var kill_cast := CastResult.new()
+	kill_cast.grammar_report = GrammarReport.new()
+	kill_cast.grammar_report.overall_pass = true
+	kill_cast.effect_spec = EffectSpec.new()
+	kill_cast.effect_spec.tier_sum = 2
+	kill_cast.resolved = ResolvedEffect.new()
+	kill_cast.resolved.effect_power = 15.0
+	kill_cast.resolved.target_word_id = "fjandi"
+
+	var info1 := cs.apply_cast(kill_cast, 2, 2)
+	r.assert_true(info1["enemy_killed"], "CS: 雑魚撃破")
+	r.assert_eq(cs.current_enemy_index, 1, "CS: 次の敵に進む (current=1=Boss)")
+	r.assert_eq(cs.state, CombatSystem.State.ENEMY_TURN, "CS: 雑魚撃破後は ENEMY_TURN")
+	r.assert_false(info1["floor_cleared"], "CS: ボスがまだ残ってる")
+	r.assert_eq(zako.hp, 0.0, "CS: 雑魚 HP=0")
+	r.assert_eq(info1["delta"], 3.0, "CS: Δ=3.0")
+	r.assert_eq(cs.world_time_delta_total, 3.0, "CS: Δ累積=3.0")
+
+	var einfo := cs.enemy_turn()
+	r.assert_eq(einfo["damage"], 5.0, "CS: Boss 攻撃力=5.0")
+	r.assert_eq(p_c.hp, 95.0, "CS: Player HP 100→95")
+	r.assert_eq(cs.state, CombatSystem.State.PLAYER_TURN, "CS: 敵ターン後は PLAYER_TURN")
+	r.assert_eq(cs.turn_count, 2, "CS: turn=2 にインクリメント")
+
+	var boss_kill := CastResult.new()
+	boss_kill.grammar_report = GrammarReport.new()
+	boss_kill.grammar_report.overall_pass = true
+	boss_kill.effect_spec = EffectSpec.new()
+	boss_kill.effect_spec.tier_sum = 2
+	boss_kill.resolved = ResolvedEffect.new()
+	boss_kill.resolved.effect_power = 25.0
+	boss_kill.resolved.target_word_id = "fjandi"
+
+	var info2 := cs.apply_cast(boss_kill, 2, 2)
+	r.assert_true(info2["floor_cleared"], "CS: ボス撃破 → floor_cleared=true")
+	r.assert_eq(cs.state, CombatSystem.State.FLOOR_CLEAR, "CS: FLOOR_CLEAR")
+	r.assert_true(cs.is_over(), "CS: is_over=true")
+	r.assert_eq(boss.hp, 0.0, "CS: ボス HP=0")
+
+	var dead_cast_info := cs.apply_cast(kill_cast, 2, 2)
+	r.assert_eq(dead_cast_info["to_target"], 0.0, "CS: 終了後 apply_cast は NOP")
+	var dead_enemy_info := cs.enemy_turn()
+	r.assert_eq(dead_enemy_info["damage"], 0.0, "CS: 終了後 enemy_turn は NOP")
+
+	# 敗北フロー
+	var cs2 := CombatSystem.new()
+	var p2 := Combatant.new("P2", 5.0, {})
+	var tough := Combatant.new("Tough", 1000.0, {})
+	cs2.start_floor(p2, [tough], [10.0])
+	var weak_cast := CastResult.new()
+	weak_cast.grammar_report = GrammarReport.new()
+	weak_cast.effect_spec = EffectSpec.new()
+	weak_cast.resolved = ResolvedEffect.new()
+	weak_cast.resolved.effect_power = 1.0
+	weak_cast.resolved.target_word_id = "fjandi"
+	cs2.apply_cast(weak_cast, 2, 2)
+	cs2.enemy_turn()
+	r.assert_eq(p2.hp, 0.0, "CS: Player HP=0")
+	r.assert_eq(cs2.state, CombatSystem.State.DEFEAT, "CS: 敗北")
+	r.assert_true(cs2.is_over(), "CS: 敗北で is_over=true")
+
+	# snapshot
+	var snap := cs.snapshot()
+	r.assert_eq(snap["state"], CombatSystem.State.FLOOR_CLEAR, "snapshot: state")
+	r.assert_eq(snap["enemies"].size(), 2, "snapshot: 敵 2 体")
+	r.assert_eq(int(snap["enemies"][0]["hp"]), 0, "snapshot: 雑魚 HP=0")
+	r.assert_eq(int(snap["enemies"][1]["hp"]), 0, "snapshot: ボス HP=0")
+
 	r.print_summary()
 
 	# 自動終了（CLI からの実行も想定）。エディタで F5 した場合は手動で閉じる。

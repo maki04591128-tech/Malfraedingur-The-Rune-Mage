@@ -1,0 +1,23 @@
+{
+  "id": "C5",
+  "name": "C5 scaffold=none で達人プレイ",
+  "description": "phase_advanced (scaffold=none, GrammarReport 詳細非表示) で C=100 の達人。補助なしでもボス撃破できるか。kill 基準のチェック。",
+  "ruleset_id": "phase_advanced",
+  "scaffold_level": "none",
+  "c_override": 100.0,
+  "player_hp": 100.0,
+  "enemies": [
+    {"name": "雑魚 fjandi", "hp": 30.0, "atk": 8.0},
+    {"name": "ボス Helgrind 番人", "hp": 80.0, "atk": 15.0}
+  ],
+  "tokens": [
+    {"word_id": "meida", "case": ""},
+    {"word_id": "mikill", "case": "acc"},
+    {"word_id": "fjandi", "case": "acc"}
+  ],
+  "expected_outcome": {
+    "grammar_pass": true,
+    "misfire_count": 0,
+    "human_check": "暴発ゼロ・誤射ゼロでボス撃破。達人不変条件 (T6: C=100 では暴発しない) が戦闘層でも保たれる"
+  }
+}

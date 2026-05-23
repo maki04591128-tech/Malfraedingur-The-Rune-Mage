@@ -1,0 +1,22 @@
+{
+  "id": "C1",
+  "name": "C1 正詠唱で雑魚撃破",
+  "description": "meiða fjanda（対格・正）で雑魚 fjandi を倒す。文法 OK / G=1.00 / DAMAGE_SCALE=3.0 で 3〜5 ターンの想定。",
+  "ruleset_id": "phase_intermediate",
+  "scaffold_level": "low",
+  "c_override": 50.0,
+  "player_hp": 100.0,
+  "enemies": [
+    {"name": "雑魚 fjandi", "hp": 30.0, "atk": 8.0}
+  ],
+  "tokens": [
+    {"word_id": "meida", "case": ""},
+    {"word_id": "fjandi", "case": "acc"}
+  ],
+  "expected_outcome": {
+    "grammar_pass": true,
+    "g_score": 1.0,
+    "kill_in_turns_range": [3, 6],
+    "player_hp_remaining_min": 60
+  }
+}
