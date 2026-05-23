@@ -1,0 +1,12 @@
+{
+  "description": "INC-1 必須シナリオ S1〜S6 (06_INC1検証仕様.md §3)。spell_builder の「シナリオ呼び出し」で参照される。各シナリオは tokens / ruleset_id / c_override / rng_seed / expected を持つ。",
+  "scenarios": [
+    "s1_correct.json",
+    "s1_wrong_case.json",
+    "s2_c_sweep.json",
+    "s3_high_tier.json",
+    "s4_high_c.json",
+    "s5_freetext_misspell.json",
+    "s6_word_order.json"
+  ]
+}

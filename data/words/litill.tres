@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="WordResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/words/word_resource.gd" id="1_word"]
+
+[resource]
+script = ExtResource("1_word")
+id = "litill"
+word_class = "modifier"
+gloss = {
+"en": "little",
+"ja": "小さく"
+}
+reading_kana = "リーティル"
+ipa = "ˈliːtill"
+gender = ""
+tier = 1
+comprehension_default = 0
+inflection = {
+"sg": {
+"masculine": {
+"nom": "lítill",
+"acc": "lítinn",
+"dat": "litlum",
+"gen": "lítils"
+},
+"feminine": {
+"nom": "lítil",
+"acc": "litla",
+"dat": "lítilli",
+"gen": "lítillar"
+},
+"neuter": {
+"nom": "lítit",
+"acc": "lítit",
+"dat": "litlu",
+"gen": "lítils"
+}
+}
+}
+governs_case = ""
+function_role = ""
+discovery = PackedStringArray("inscription")
+element = {}
+source = "CV s.v. lítill"
+confidence = "verified"
+verified = false

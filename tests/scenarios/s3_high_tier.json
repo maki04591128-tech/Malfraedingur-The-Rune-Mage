@@ -1,0 +1,17 @@
+{
+  "id": "s3_high_tier",
+  "name": "S3 — 強ティア未習語を含む正しい呪文",
+  "description": "06 §3 S3: 強 tier の効果語＋未習対象。INC-1 では tier=1 のみなので近似として meiða + sjalfan (再帰、masc.acc)。本来は tier=3 の lakna 等で試したい。C=0 で 10% 暴発、暴発時は不発 (activation バンド)。「博打感」が成立するか観察。",
+  "ruleset_id": "phase_intermediate",
+  "c_override": 0,
+  "rng_seed": 0,
+  "tokens": [
+    {"word_id": "meida",  "case": ""},
+    {"word_id": "sjalfr", "case": "acc"}
+  ],
+  "expected": {
+    "overall_pass": true,
+    "p_misfire_approx": 0.10,
+    "misfire_band": "activation"
+  }
+}

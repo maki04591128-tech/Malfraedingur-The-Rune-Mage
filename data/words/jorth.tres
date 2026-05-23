@@ -18,6 +18,8 @@ comprehension_default = 0
 inflection = {
 "sg": {
 "acc": "jörð",
+"dat": "jörðu",
+"gen": "jarðar",
 "nom": "jörð"
 }
 }

@@ -42,7 +42,7 @@ msgstr "%d 回シミュレート"
 msgid "spell_lab.comprehension_slider"
 msgstr "理解度 C"
 
-# === GrammarReport の汎用文言 ===
+# === GrammarReport 汎用文言 ===
 msgid "grammar.case_agreement.fail"
 msgstr "格が一致していません"
 
@@ -51,3 +51,84 @@ msgstr "語順が正準形ではありません"
 
 msgid "grammar.recommended_format"
 msgstr "%s → %s ?"
+
+# === GrammarReport reason / recommended テンプレ (v0.17 / 03 附録 B 準拠) ===
+# %s 引数は位置順に置換される。複数 %s がある場合は全て指定する必要がある。
+
+# 格一致違反 (case_agreement)
+# 引数: 表層形, 格名（日本語）
+msgid "grammar.case_agreement.reason"
+msgstr "%s は%sではありません"
+
+# 推奨: 表層形, 期待形 → "fjandi → fjanda ?"
+msgid "grammar.case_agreement.recommended"
+msgstr "%s → %s ?"
+
+# 効果語あり目的語なし
+# 引数: 要求格名
+msgid "grammar.case_agreement.missing_target"
+msgstr "目的語がありません（要 %s）"
+
+# 語順違反 (word_order) — V→O 順序
+msgid "grammar.word_order.vo_violation"
+msgstr "効果語が対象語の後に来ています（命令文は V→O 順）"
+
+msgid "grammar.word_order.vo_recommended"
+msgstr "効果語を先に: %s ..."
+
+# 語順違反 — 修飾語の隣接
+msgid "grammar.word_order.modifier_adjacency"
+msgstr "形容詞は被修飾名詞に隣接させてください（前置修飾推奨）"
+
+msgid "grammar.word_order.modifier_adjacency_recommended"
+msgstr "修飾語を対象語の直前に移動"
+
+# 語順違反 — 属性の挟み込み
+msgid "grammar.word_order.element_inserted"
+msgstr "属性語は効果語の前または対象語の後に置いてください（名詞句を割らない）"
+
+msgid "grammar.word_order.element_inserted_recommended"
+msgstr "属性語を文頭または文末へ"
+
+# 属性合成 (elements) — 半端な四大組み合わせ
+# 引数: 使用中の四大元素（カンマ区切り）
+msgid "grammar.elements.partial_combo"
+msgstr "半端な属性合成は不発します（%s）"
+
+# 引数: 四大元素一覧
+msgid "grammar.elements.partial_combo_recommended"
+msgstr "4 元素全部 (%s) で混沌属性、または 1 元素のみで属性付与"
+
+# 修飾語 (modifier) — 単独使用
+# 引数: 修飾語 ID（カンマ区切り）
+msgid "grammar.modifier.standalone"
+msgstr "修飾語 (%s) は効果語と共に詠唱してください"
+
+msgid "grammar.modifier.standalone_recommended"
+msgstr "効果語（meiða 等）を追加"
+
+# 修飾一致 (modifier_agreement) — 性・数・格不一致
+# 引数: 修飾語表層形, 修飾語の現格, 対象語表層形, 対象語の格
+msgid "grammar.modifier_agreement.case_mismatch"
+msgstr "%s（%s）は対象 %s（%s）と性・数・格を一致させてください"
+
+msgid "grammar.modifier_agreement.recommended"
+msgstr "%s → %s ?"
+
+# 修飾語の活用形が辞書に未定義
+# 引数: 語 ID, 性別, 格名
+msgid "grammar.modifier_agreement.no_form"
+msgstr "%s の活用形が見つかりません（性=%s、格=%s）"
+
+# === 格名 (日本語ラベル) ===
+msgid "grammar.case.nom"
+msgstr "主格"
+
+msgid "grammar.case.acc"
+msgstr "対格"
+
+msgid "grammar.case.dat"
+msgstr "与格"
+
+msgid "grammar.case.gen"
+msgstr "属格"

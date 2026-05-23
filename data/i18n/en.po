@@ -1,0 +1,124 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: malfraedingur\n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: en\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# DL1: English locale (release-gate per docs/02 INC-5/6).
+# v0.17 (INC-1): grammar feedback messages drafted from 03 附録B.
+# Subject to review during INC-5 monitoring phase.
+
+# === Title / Menu ===
+msgid "ui.app.title"
+msgstr "Málfræðingur"
+
+msgid "ui.menu.start"
+msgstr "Start"
+
+msgid "ui.menu.continue"
+msgstr "Continue"
+
+msgid "ui.menu.settings"
+msgstr "Settings"
+
+msgid "ui.menu.exit"
+msgstr "Exit"
+
+# === spell_lab ===
+msgid "spell_lab.title"
+msgstr "Spell Lab"
+
+msgid "spell_lab.cast_button"
+msgstr "Cast"
+
+msgid "spell_lab.batch_button"
+msgstr "Simulate %d times"
+
+msgid "spell_lab.comprehension_slider"
+msgstr "Comprehension C"
+
+# === GrammarReport general messages ===
+msgid "grammar.case_agreement.fail"
+msgstr "Case mismatch"
+
+msgid "grammar.word_order.fail"
+msgstr "Word order is not canonical"
+
+msgid "grammar.recommended_format"
+msgstr "%s → %s ?"
+
+# === GrammarReport reason / recommended templates (03 appendix B) ===
+
+# case_agreement violation
+msgid "grammar.case_agreement.reason"
+msgstr "%s is not %s"
+
+msgid "grammar.case_agreement.recommended"
+msgstr "%s → %s ?"
+
+msgid "grammar.case_agreement.missing_target"
+msgstr "Missing object (requires %s)"
+
+# word_order — VO violation
+msgid "grammar.word_order.vo_violation"
+msgstr "Verb must precede object (V→O imperative)"
+
+msgid "grammar.word_order.vo_recommended"
+msgstr "Move the verb first: %s ..."
+
+# word_order — modifier adjacency
+msgid "grammar.word_order.modifier_adjacency"
+msgstr "Adjective must be adjacent to its noun (prepositive preferred)"
+
+msgid "grammar.word_order.modifier_adjacency_recommended"
+msgstr "Move modifier right before the object"
+
+# word_order — element inserted
+msgid "grammar.word_order.element_inserted"
+msgstr "Element must come before the verb or after the object (don't split the noun phrase)"
+
+msgid "grammar.word_order.element_inserted_recommended"
+msgstr "Move element to clause-initial or clause-final"
+
+# elements — half-baked combo
+msgid "grammar.elements.partial_combo"
+msgstr "Incomplete elemental combo fails (%s)"
+
+msgid "grammar.elements.partial_combo_recommended"
+msgstr "Use all four (%s) for chaos, or just one for attribute"
+
+# modifier — standalone
+msgid "grammar.modifier.standalone"
+msgstr "Modifier (%s) must be cast with an effect word"
+
+msgid "grammar.modifier.standalone_recommended"
+msgstr "Add an effect word (e.g. meiða)"
+
+# modifier_agreement — case mismatch
+msgid "grammar.modifier_agreement.case_mismatch"
+msgstr "%s (%s) must agree with object %s (%s) in gender, number, and case"
+
+msgid "grammar.modifier_agreement.recommended"
+msgstr "%s → %s ?"
+
+msgid "grammar.modifier_agreement.no_form"
+msgstr "Inflection form not found for %s (gender=%s, case=%s)"
+
+# === Case names ===
+msgid "grammar.case.nom"
+msgstr "nominative"
+
+msgid "grammar.case.acc"
+msgstr "accusative"
+
+msgid "grammar.case.dat"
+msgstr "dative"
+
+msgid "grammar.case.gen"
+msgstr "genitive"

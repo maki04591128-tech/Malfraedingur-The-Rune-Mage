@@ -1,11 +1,10 @@
 extends Node
 ## SpellEngine — 呪文パイプライン Facade（Autoload）。
-## API: cast(tokens_in: Array, ruleset: Resource) -> CastResult
+## API: cast(tokens_in: Array, ruleset: Resource, options: Dictionary = {}) -> CastResult
 ## パイプライン: Tokenizer → Parser → Validator → Evaluator → Resolver（04 §4）。
 ## 物語固定詠唱 `öld renna aptr`（巻き戻し）は本 API を通さない（04 §4 末尾）。
 ##
-## INC-0: 縦の骨だけ通す。各段はシェルで空回りし、CastResult を返すだけ。
-##         実ロジックは INC-1 で順次充足。
+## INC-1: 各段に実装が入った。spell_lab が `cast()` を直接叩いて S1 を可視化する。
 ##
 ## 不変条件:
 ##   - この autoload は他の autoload を **class スコープで参照しない**
@@ -17,23 +16,43 @@ extends Node
 ## 呪文1詠唱を解決して CastResult を返す。
 ##   tokens_in: SpellComposer が出した {word_id, case} 列、または無辞書経路の正規化済み列
 ##   ruleset: GrammarRuleset（可用性ゲート＋scaffold_level＋severity_weights）
-## 戻り値: 4子モデル全てが populated な CastResult（INC-0 は空シェル相当の値）。
-func cast(tokens_in: Array, ruleset: Resource) -> CastResult:
-	# 縦の骨を順に呼ぶ。各段の出力が次段の入力。
-	var tokens: Array = SpellTokenizer.tokenize(tokens_in, ruleset)
+##   options: 任意の上書き。
+##            {
+##              "c_override": float (0..100) — 指定すれば C を上書き（spell_lab スライダ用）
+##              "rng_seed":   int            — Resolver の seed 固定。0 はランダム
+##            }
+## 戻り値: 4子モデル全てが populated な CastResult。
+func cast(tokens_in: Array, ruleset: Resource, options: Dictionary = {}) -> CastResult:
+	# 他 autoload は関数ローカルで参照（class スコープ参照禁止の不変条件）。
+	var lexicon := get_node_or_null("/root/Lexicon")
+	var word_lookup := Callable()
+	if lexicon != null and lexicon.has_method("get_word"):
+		word_lookup = Callable(lexicon, "get_word")
+
+	# Tokenizer → Parser
+	var tokens: Array = SpellTokenizer.tokenize(tokens_in, ruleset, word_lookup)
 	var ast: Dictionary = SpellParser.parse(tokens)
+
+	# Validator → GrammarReport / G
 	var grammar_report: GrammarReport = SpellValidator.validate(ast, ruleset)
-	var effect_spec: EffectSpec = SpellEvaluator.evaluate(ast, null, ruleset)
 
-	# 制御精度の入力（INC-1 で Lexicon から実値を取って計算）。
+	# Evaluator → EffectSpec / P_base
+	var effect_spec: EffectSpec = SpellEvaluator.evaluate(ast, word_lookup, ruleset)
+
+	# C: options.c_override > 使用語の comprehension 加重平均（Lexicon 経由）
 	var c_weighted: float = 0.0
-	var g_score: float = 0.0
-	if grammar_report != null:
-		g_score = grammar_report.g_score
-	var rng_seed: int = 0
+	if options.has("c_override"):
+		c_weighted = clampf(float(options["c_override"]), 0.0, 100.0)
+	else:
+		c_weighted = _average_comprehension(tokens, lexicon)
 
-	var resolved: ResolvedEffect = SpellResolver.resolve(effect_spec, c_weighted, g_score, rng_seed)
+	var g_score: float = grammar_report.g_score if grammar_report != null else 0.0
+	var rng_seed: int = int(options.get("rng_seed", 0))
 
+	# Resolver → ResolvedEffect（v0.11: report を渡して暴発確率に文法を合流）
+	var resolved: ResolvedEffect = SpellResolver.resolve(effect_spec, c_weighted, g_score, rng_seed, grammar_report)
+
+	# CastResult 組み立て
 	var result := CastResult.new()
 	result.grammar_report = grammar_report
 	result.effect_spec = effect_spec
@@ -41,7 +60,14 @@ func cast(tokens_in: Array, ruleset: Resource) -> CastResult:
 	result.debug = {
 		"C": c_weighted,
 		"G": g_score,
-		"misfire_chance": SpellResolver.compute_misfire_chance(c_weighted),
+		"control": clampf(0.6 * (c_weighted / 100.0) + 0.4 * g_score, 0.0, 1.0),
+		"p_base": effect_spec.p_base if effect_spec != null else 0.0,
+		"tier_sum": effect_spec.tier_sum if effect_spec != null else 0,
+		# v0.11: misfire_chance は文法込みの実値。base のみは misfire_base に別途。
+		"misfire_chance": SpellResolver.compute_misfire_chance(c_weighted, grammar_report),
+		"misfire_base": SpellResolver.compute_misfire_chance(c_weighted),
+		# v0.12: 成功時威力ペナルティ g_mult = G（spell_lab 表示用）
+		"g_mult": clampf(g_score, 0.0, 1.0),
 		"band": SpellResolver.band_for(c_weighted),
 		"seed": rng_seed,
 	}
@@ -53,3 +79,23 @@ func cast(tokens_in: Array, ruleset: Resource) -> CastResult:
 func incant_rewind() -> void:
 	# INC-3 で実装。ここを通る詠唱はパイプラインを完全にバイパスする。
 	pass
+
+
+## 使用語の理解度加重平均（03 §5.1 weakest-link tunable は INC-1 では単純平均で代用）。
+##   tokens: Tokenizer の出力
+##   lexicon: /root/Lexicon ノード（null 可）
+## 返り値: 0..100。語が無ければ 0。
+func _average_comprehension(tokens: Array, lexicon) -> float:
+	if lexicon == null or not lexicon.has_method("get_comprehension"):
+		return 0.0
+	var total: int = 0
+	var count: int = 0
+	for tok in tokens:
+		var word_id: String = String(tok.get("word_id", ""))
+		if word_id.is_empty():
+			continue
+		total += int(lexicon.get_comprehension(word_id))
+		count += 1
+	if count == 0:
+		return 0.0
+	return float(total) / float(count)

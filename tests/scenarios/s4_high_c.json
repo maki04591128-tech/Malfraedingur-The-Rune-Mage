@@ -1,0 +1,17 @@
+{
+  "id": "s4_high_c",
+  "name": "S4 — 文法正・C 高（達人モード）",
+  "description": "06 §3 S4: C=90 で文法正。ほぼ決定的、稀な暴発は自爆 (control バンド)。達人の緊張感が出るかを観察。INC-1 では C=100 で完全決定的 (達人不変条件)。",
+  "ruleset_id": "phase_intermediate",
+  "c_override": 90,
+  "rng_seed": 0,
+  "tokens": [
+    {"word_id": "meida",  "case": ""},
+    {"word_id": "fjandi", "case": "acc"}
+  ],
+  "expected": {
+    "overall_pass": true,
+    "p_misfire_approx": 0.01,
+    "misfire_band": "control"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "s5_freetext_misspell",
+  "name": "S5 — 無辞書経路で語形を綴り誤り",
+  "description": "06 §3 S5: 無辞書経路 (freetext) で fjandl のような綴り誤り。タイル経路と同じ判定に正規化されるかを確認。INC-1 範囲では無辞書経路未実装のため、ここはスタブ。INC-2/3 で実装。",
+  "ruleset_id": "phase_intermediate",
+  "c_override": 50,
+  "rng_seed": 0,
+  "tokens": [],
+  "expected": {
+    "note": "INC-1 範囲外（無辞書経路は INC-2/3）",
+    "future_unknown_word_mult": 4.0
+  }
+}

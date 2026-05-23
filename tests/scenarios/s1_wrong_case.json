@@ -1,0 +1,19 @@
+{
+  "id": "s1_wrong_case",
+  "name": "S1 誤 — meiða fjandi（主格）",
+  "description": "06 §3 S1: 格違反。対格を期待する meiða に主格を渡す。GrammarReport が fjandi → fjanda? を提示すべき。",
+  "ruleset_id": "phase_intermediate",
+  "c_override": 50,
+  "rng_seed": 7,
+  "tokens": [
+    {"word_id": "meida",  "case": ""},
+    {"word_id": "fjandi", "case": "nom"}
+  ],
+  "expected": {
+    "overall_pass": false,
+    "g_score": 0.5,
+    "p_misfire_approx": 0.10,
+    "must_find_rule": "case_agreement",
+    "recommended_contains": "fjanda"
+  }
+}

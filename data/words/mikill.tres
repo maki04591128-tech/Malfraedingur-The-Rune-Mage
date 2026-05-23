@@ -4,29 +4,43 @@
 
 [resource]
 script = ExtResource("1_word")
-id = "sjalfr"
-word_class = "target"
+id = "mikill"
+word_class = "modifier"
 gloss = {
-"en": "self",
-"ja": "自分"
+"en": "great",
+"ja": "大いに"
 }
-reading_kana = "シャールヴル"
-ipa = "ˈsjaːlvr̥"
-gender = "masculine"
+reading_kana = "ミキル"
+ipa = "ˈmikːill"
+gender = ""
 tier = 1
 comprehension_default = 0
 inflection = {
 "sg": {
-"acc": "sjalfan",
-"dat": "sjalfum",
-"gen": "sjalfs",
-"nom": "sjálfr"
+"masculine": {
+"nom": "mikill",
+"acc": "mikinn",
+"dat": "miklum",
+"gen": "mikils"
+},
+"feminine": {
+"nom": "mikil",
+"acc": "mikla",
+"dat": "mikilli",
+"gen": "mikillar"
+},
+"neuter": {
+"nom": "mikit",
+"acc": "mikit",
+"dat": "miklu",
+"gen": "mikils"
+}
 }
 }
 governs_case = ""
 function_role = ""
 discovery = PackedStringArray("inscription")
 element = {}
-source = "CV s.v. sjálfr; Zoëga"
+source = "CV s.v. mikill"
 confidence = "verified"
 verified = false

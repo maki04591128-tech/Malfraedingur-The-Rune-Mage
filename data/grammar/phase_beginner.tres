@@ -1,0 +1,54 @@
+[gd_resource type="Resource" script_class="GrammarRuleset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/grammar/grammar_ruleset.gd" id="1_ruleset"]
+
+[resource]
+script = ExtResource("1_ruleset")
+id = "phase_beginner"
+label = "初級"
+rules = {
+"case_agreement": {
+"core": true,
+"enabled": true,
+"severity": "moderate"
+},
+"condition_clause": {
+"enabled": false,
+"severity": "severe"
+},
+"elements": {
+"enabled": true,
+"severity": "minor"
+},
+"modifier": {
+"enabled": false,
+"severity": "minor"
+},
+"negation_scope": {
+"enabled": false,
+"severity": "severe"
+},
+"number_agreement": {
+"enabled": false,
+"severity": "minor"
+},
+"range": {
+"enabled": false,
+"severity": "minor"
+},
+"word_order": {
+"core": true,
+"enabled": true,
+"severity": "minor"
+},
+"word_order_bonus": {
+"enabled": true,
+"weight": 0.15
+}
+}
+scaffold_level = "mid"
+severity_weights = {
+"minor": 1.1,
+"moderate": 1.3,
+"severe": 1.8
+}

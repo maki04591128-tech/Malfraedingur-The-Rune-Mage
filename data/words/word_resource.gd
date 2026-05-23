@@ -40,7 +40,9 @@ class_name WordResource
 @export_range(0, 100) var comprehension_default: int = 0
 
 ## 格変化表（対象語は必須）。
-## 形: { "sg": { "nom": "fjandi", "acc": "fjanda", ... }, "pl": { ... } }
+## 形式 1（名詞・性別固定）: { "sg": { "nom": "fjandi", "acc": "fjanda", "dat": ..., "gen": ... }, "pl": { ... } }
+## 形式 2（形容詞・性別可変、v0.14 で追加）: { "sg": { "masculine": { "nom": "mikill", "acc": "mikinn", ... }, "feminine": {...}, "neuter": {...} } }
+##   get_inflected(number, case, gender) で性別を渡せば形容詞活用も引ける。
 @export var inflection: Dictionary = {}
 
 ## 効果語のみ: 要求する目的語の格。"acc" / "dat" / "gen" / "none" / "" のいずれか。
@@ -112,12 +114,44 @@ func get_gloss(locale: String) -> String:
 	return ""
 
 
-## 格変化形を取得。number ∈ {"sg","pl"}、grammatical_case ∈ {"nom","acc","dat","gen"}。
+## 格変化形を取得（v0.14 で gender 引数を追加）。
+##   number: "sg" | "pl"
+##   grammatical_case: "nom" | "acc" | "dat" | "gen"
+##   gender: "masculine" | "feminine" | "neuter" | "" (空)
+##     - 形容詞（性別可変）の場合は gender を渡す。
+##     - 名詞（性別固定）の場合は無視（gender="" でも内部で名詞構造として引く）。
 ## 見つからなければ空文字（呼び出し側で要 nil 判断）。
-func get_inflected(number: String, grammatical_case: String) -> String:
+func get_inflected(number: String, grammatical_case: String, gender: String = "") -> String:
 	if not inflection.has(number):
 		return ""
-	var paradigm: Dictionary = inflection[number]
-	if not paradigm.has(grammatical_case):
+	var number_paradigm = inflection[number]
+	if typeof(number_paradigm) != TYPE_DICTIONARY:
 		return ""
-	return paradigm[grammatical_case]
+
+	# 形容詞（性別可変）: 性別キーがある場合は性別 → 格 の順で引く。
+	if not gender.is_empty() and number_paradigm.has(gender):
+		var gender_paradigm = number_paradigm[gender]
+		if typeof(gender_paradigm) == TYPE_DICTIONARY and gender_paradigm.has(grammatical_case):
+			return String(gender_paradigm[grammatical_case])
+		return ""
+
+	# 名詞（性別固定）: 直接格で引く。
+	if number_paradigm.has(grammatical_case):
+		var v = number_paradigm[grammatical_case]
+		if typeof(v) == TYPE_STRING:
+			return v
+	return ""
+
+
+## 形容詞活用を持つか（modifier の判定用）。
+## inflection["sg"] のキーに gender 文字列が含まれていれば形容詞構造。
+func has_gendered_inflection() -> bool:
+	if not inflection.has("sg"):
+		return false
+	var sg = inflection["sg"]
+	if typeof(sg) != TYPE_DICTIONARY:
+		return false
+	for key in ["masculine", "feminine", "neuter"]:
+		if sg.has(key):
+			return true
+	return false

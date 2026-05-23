@@ -18,6 +18,8 @@ comprehension_default = 0
 inflection = {
 "sg": {
 "acc": "vatn",
+"dat": "vatni",
+"gen": "vatns",
 "nom": "vatn"
 }
 }

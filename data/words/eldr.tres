@@ -18,6 +18,8 @@ comprehension_default = 0
 inflection = {
 "sg": {
 "acc": "eld",
+"dat": "eldi",
+"gen": "elds",
 "nom": "eldr"
 }
 }
