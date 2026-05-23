@@ -13,12 +13,13 @@ class_name DamageCalculator
 ##   - target_word_id == "sjalfr" は self-target 判定で to_target=0, to_self に流す。
 ##   - 暴発の self_damage は to_self に加算。
 
-## ダメージスケール定数（INC-2 v0.2 で追加）。
+## ダメージスケール（INC-2 v0.2 で導入、v0.4 で static var 化）。
 ## 実機検証で「P_base ~ 2.3 のダメージ vs 敵 HP 30 / Player HP 100」が釣り合わず、
 ## 雑魚撃破まで 13+ ターン要する一方 Player は 12 ターンで死ぬ問題が判明。
 ## DAMAGE_SCALE で全戦闘ダメージを底上げし、3〜5 ターンで雑魚を倒せる強度に揃える。
-## INC-3 で BalanceConfig.damage_scale として外出し予定（現状は const）。
-const DAMAGE_SCALE: float = 3.0
+## v0.4: combat_test のチューニングパネルから書き換え可能にするため static var に。
+## INC-3 で BalanceConfig.damage_scale として外出し予定。
+static var DAMAGE_SCALE: float = 3.0
 
 ## 1詠唱あたりの世界時間 Δ の暫定計算式。
 ## INC-3 で BalanceConfig.world_time_costs に外出し。

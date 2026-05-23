@@ -788,6 +788,75 @@ func _ready() -> void:
 	r.assert_eq(int(snap["enemies"][0]["hp"]), 0, "snapshot: 雑魚 HP=0")
 	r.assert_eq(int(snap["enemies"][1]["hp"]), 0, "snapshot: ボス HP=0")
 
+	# --- INC-2 v0.4: SpellEngine → CombatSystem 統合 E2E テスト ---
+	# Resolver の確率挙動・GrammarReport・Evaluator が戦闘層と正しく繋がっていることを
+	# 固定 seed の連続詠唱で確認。phase_intermediate + C=100 + DAMAGE_SCALE=3.0 で
+	# `meiða mikinn fjanda` を最大 10 ターン撃って雑魚 30 HP を倒せる、暴発ゼロ、を見る。
+	# DAMAGE_SCALE を念のためデフォルト 3.0 にリセットしてから走らせる（前のテストで触られていないが防御）。
+	var saved_scale: float = DamageCalculator.DAMAGE_SCALE
+	DamageCalculator.DAMAGE_SCALE = 3.0
+
+	var engine_e2e := get_node("/root/SpellEngine")
+	var rs_inter_e2e: GrammarRuleset = load("res://data/grammar/phase_intermediate.tres") as GrammarRuleset
+	r.assert_not_null(engine_e2e, "E2E: SpellEngine autoload")
+	r.assert_not_null(rs_inter_e2e, "E2E: phase_intermediate ruleset")
+
+	if engine_e2e != null and rs_inter_e2e != null:
+		var cs_e2e := CombatSystem.new()
+		var player_e2e := Combatant.new("Player", 100.0, {})
+		var zako_e2e := Combatant.new("Zako", 30.0, {})
+		cs_e2e.start_floor(player_e2e, [zako_e2e], [8.0])
+
+		# `meiða mikinn fjanda` (V 修飾 名詞・正準語順)
+		var tokens_e2e: Array = [
+			{"word_id": "meida",  "case": ""},
+			{"word_id": "mikill", "case": "acc"},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+
+		var max_turns: int = 10
+		var actual_turns: int = 0
+		var misfire_count_e2e: int = 0
+		var cast_seed: int = 1000
+		for t in max_turns:
+			if cs_e2e.is_over():
+				break
+			var cr: CastResult = engine_e2e.cast(tokens_e2e, rs_inter_e2e, {"c_override": 100.0, "rng_seed": cast_seed + t})
+			if cr == null:
+				break
+			if cr.resolved != null and cr.resolved.misfired:
+				misfire_count_e2e += 1
+			cs_e2e.apply_cast(cr, tokens_e2e.size(), cr.effect_spec.tier_sum)
+			actual_turns += 1
+			if cs_e2e.is_over():
+				break
+			cs_e2e.enemy_turn()
+
+		# 雑魚は 5 ターン以内に死ぬはず（DAMAGE_SCALE=3.0, mikill 修飾語 ×1.5 で P_base ~ 3.45、
+		# C=100 + G=1.0 で variance=0 → 確定 3.45 × 3.0 = 10.35 ダメージ/ターン → 3 ターンで 31 ダメ）
+		r.assert_eq(zako_e2e.hp, 0.0, "E2E: 雑魚撃破")
+		r.assert_true(cs_e2e.is_over(), "E2E: 戦闘終了")
+		r.assert_true(actual_turns <= 5, "E2E: 5 ターン以内に撃破 (実測 %d)" % actual_turns)
+		# C=100 達人不変条件 (T6) は戦闘層でも保たれる: 暴発ゼロ
+		r.assert_eq(misfire_count_e2e, 0, "E2E: C=100 で暴発ゼロ (達人不変・戦闘層版)")
+		# Player は雑魚反撃を 4 回受けても HP > 60 で生存しているはず
+		r.assert_true(player_e2e.hp > 60.0, "E2E: Player HP > 60 残し (got %.1f)" % player_e2e.hp)
+
+		# DAMAGE_SCALE を直接書き換えた場合の反映確認
+		DamageCalculator.DAMAGE_SCALE = 1.0
+		var weak_resolved := ResolvedEffect.new()
+		weak_resolved.effect_power = 10.0
+		weak_resolved.target_word_id = "fjandi"
+		var weak_target := Combatant.new("T", 100.0, {})
+		var calc_scale1 := DamageCalculator.compute(weak_resolved, weak_target, {})
+		r.assert_eq(calc_scale1["to_target"], 10.0, "E2E: DAMAGE_SCALE=1.0 で素通し")
+		DamageCalculator.DAMAGE_SCALE = 5.0
+		var calc_scale5 := DamageCalculator.compute(weak_resolved, weak_target, {})
+		r.assert_eq(calc_scale5["to_target"], 50.0, "E2E: DAMAGE_SCALE=5.0 で 10 → 50")
+
+	# 後片付け
+	DamageCalculator.DAMAGE_SCALE = saved_scale
+
 	r.print_summary()
 
 	# 自動終了（CLI からの実行も想定）。エディタで F5 した場合は手動で閉じる。
