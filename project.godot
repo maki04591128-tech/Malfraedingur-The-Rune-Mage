@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="malfraedingur"
-run/main_scene="res://scenes/combat/combat_test.tscn"
+run/main_scene="res://scenes/dungeon/dungeon_view.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -21,6 +21,7 @@ EventBus="*res://autoload/event_bus.gd"
 Lexicon="*res://autoload/lexicon.gd"
 GameState="*res://autoload/game_state.gd"
 SpellEngine="*res://autoload/spell_engine.gd"
+MapState="*res://autoload/map_state.gd"
 
 [internationalization]
 

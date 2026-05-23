@@ -16,6 +16,10 @@ class_name CastResult
 ## 制御精度適用後の最終効果（暴発/ばらつき確定）。
 @export var resolved: ResolvedEffect = null
 
+## 対象タイル集合（INC-3 v0.9 新規）。null = 後方互換（spell_lab/combat_test 等の位置なし詠唱）。
+## INC-3 ではタイル指定なし=最隣接敵自動。INC-3.5 で範囲語・方向語の本格解釈。
+@export var target_set: TargetSet = null
+
 ## デバッグ可視化用（spell_lab の表示源）。
 ##   形（例）: { "C": 50.0, "G": 0.85, "control": 0.62,
 ##              "misfire_chance": 0.05,

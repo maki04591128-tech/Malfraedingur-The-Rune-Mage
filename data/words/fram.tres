@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="WordResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/words/word_resource.gd" id="1_word"]
+
+[resource]
+script = ExtResource("1_word")
+id = "fram"
+word_class = "direction"
+gloss = {
+"en": "forward",
+"ja": "前へ"
+}
+reading_kana = "フラム"
+ipa = "fram"
+gender = ""
+tier = 1
+comprehension_default = 0
+inflection = {}
+governs_case = ""
+function_role = ""
+discovery = PackedStringArray("inscription")
+element = {}
+spatial = {
+"kind": "direction",
+"params": {
+"axis": "forward"
+}
+}
+source = "CV s.v. fram"
+confidence = "verified"
+verified = false

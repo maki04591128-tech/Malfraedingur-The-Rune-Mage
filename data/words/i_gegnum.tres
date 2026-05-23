@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="WordResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/words/word_resource.gd" id="1_word"]
+
+[resource]
+script = ExtResource("1_word")
+id = "i_gegnum"
+word_class = "range"
+gloss = {
+"en": "through",
+"ja": "〜を貫通して"
+}
+reading_kana = "イー ゲンヌム"
+ipa = "iː ˈɡɛɡ.num"
+gender = ""
+tier = 2
+comprehension_default = 0
+inflection = {}
+governs_case = ""
+function_role = ""
+discovery = PackedStringArray("inscription")
+element = {}
+spatial = {
+"kind": "shape",
+"params": {
+"shape": "line_pierce",
+"ignores_walls": true
+}
+}
+source = "CV s.v. gegnum (i gegnum)"
+confidence = "review"
+verified = false

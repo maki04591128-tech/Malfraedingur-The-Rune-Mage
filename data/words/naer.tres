@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="WordResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/words/word_resource.gd" id="1_word"]
+
+[resource]
+script = ExtResource("1_word")
+id = "naer"
+word_class = "range"
+gloss = {
+"en": "near",
+"ja": "近く"
+}
+reading_kana = "ナイル"
+ipa = "naːr"
+gender = ""
+tier = 1
+comprehension_default = 0
+inflection = {}
+governs_case = ""
+function_role = ""
+discovery = PackedStringArray("inscription")
+element = {}
+spatial = {
+"kind": "distance",
+"params": {
+"min": 1,
+"max": 2
+}
+}
+source = "CV s.v. nær"
+confidence = "verified"
+verified = false

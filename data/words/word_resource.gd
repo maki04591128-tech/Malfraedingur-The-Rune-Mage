@@ -17,7 +17,9 @@ class_name WordResource
 @export var id: String = ""
 
 ## 語クラス。03 附録A の語クラス分類に準拠。
-## effect | target | element | modifier | range | conditional | cond_detail | numeral | time_unit | suffix
+## effect | target | element | modifier | range | direction | conditional | cond_detail | numeral | time_unit
+## 注: 旧 "suffix" は INC-3 (v0.9) で "direction" に rename（03 v0.18 / 05 v0.9）。後方互換のため
+## 既存データに "suffix" があれば validate() で警告。
 @export var word_class: String = ""
 
 ## 学習用の意味（伏せ表示の対象）。ロケール別マップ（DL1）。
@@ -58,6 +60,15 @@ class_name WordResource
 ## 例: { "cycle": "strong_vs:vindr, weak_vs:vatn", "chaos_member": true }
 @export var element: Dictionary = {}
 
+## 範囲・方向の空間メタ（word_class=range / direction のみ・INC-3 v0.9 新規）。
+## 座標系上の意味は 09 §7 を正典とする。05 §1 バリデーション要件参照。
+##   range の例: { "kind": "distance", "params": { "min": 1, "max": 2 } }
+##              { "kind": "shape",    "params": { "shape": "circle_aoe", "radius": 2 } }
+##              { "kind": "shape",    "params": { "shape": "line_pierce", "ignores_walls": true } }
+##   direction の例: { "kind": "direction", "params": { "axis": "forward" } }
+##                  ("axis" ∈ {"forward", "backward", "left", "right"})
+@export var spatial: Dictionary = {}
+
 ## 出典（必須・03 附録A から転記）。
 @export var source: String = ""
 
@@ -96,6 +107,28 @@ func validate() -> PackedStringArray:
 		"conditional":
 			if function_role.is_empty():
 				errors.append("conditional word requires function_role")
+		"range":
+			# INC-3 v0.9 新規 (05 §1 バリデーション要件)
+			if spatial.is_empty():
+				errors.append("range word requires spatial (kind: distance|shape)")
+			elif not spatial.has("kind"):
+				errors.append("range word spatial.kind is required")
+			elif String(spatial.get("kind", "")) not in ["distance", "shape"]:
+				errors.append("range word spatial.kind must be 'distance' or 'shape' (got '%s')" % str(spatial.get("kind", "")))
+		"direction":
+			# INC-3 v0.9 新規 (05 §1 バリデーション要件)
+			if spatial.is_empty():
+				errors.append("direction word requires spatial (kind: direction)")
+			elif String(spatial.get("kind", "")) != "direction":
+				errors.append("direction word spatial.kind must be 'direction' (got '%s')" % str(spatial.get("kind", "")))
+			else:
+				var params = spatial.get("params", {})
+				var axis = String(params.get("axis", "")) if typeof(params) == TYPE_DICTIONARY else ""
+				if axis not in ["forward", "backward", "left", "right"]:
+					errors.append("direction word spatial.params.axis must be one of forward/backward/left/right (got '%s')" % axis)
+		"suffix":
+			# 旧 word_class。INC-3 v0.9 で "direction" に rename。後方互換のため警告のみ。
+			errors.append("WARN: word_class 'suffix' is deprecated since INC-3 v0.9, use 'direction' instead")
 		_:
 			pass
 

@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="EnemyResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/enemies/enemy_resource.gd" id="1_enemy"]
+
+[resource]
+script = ExtResource("1_enemy")
+id = "draugr_warden"
+name_loc = {
+"en": "Draugr Warden",
+"ja": "門番ドラウグル"
+}
+hp = 60
+atk = 10
+weak_to = PackedStringArray()
+resist = PackedStringArray("myrkr")
+sight_radius = 6
+behavior = "boss"
+drops = []
+time_cost_on_fight_days = 0.5
+source = "オリジナル"
+verified = true

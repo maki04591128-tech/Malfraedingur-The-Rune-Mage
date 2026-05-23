@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="FloorTemplate" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/floors/floor_template.gd" id="1_floor"]
+
+[resource]
+script = ExtResource("1_floor")
+id = "helgrind_1"
+realm = "Helgrind"
+depth = 1
+generation_method = "rooms_and_corridors"
+tile_size = Vector2i(40, 30)
+rooms_min = 5
+rooms_max = 7
+room_min_size = Vector2i(5, 4)
+room_max_size = Vector2i(9, 7)
+regenerate_on_rewind = true
+fixed_start_room = true
+enemy_ids = PackedStringArray("draugr_lesser")
+enemy_count = Vector2i(3, 5)
+boss_id = ""
+time_budget_hint_days = 1.0
+source = "オリジナル"
+verified = true

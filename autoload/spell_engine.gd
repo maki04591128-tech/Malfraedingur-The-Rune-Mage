@@ -18,8 +18,9 @@ extends Node
 ##   ruleset: GrammarRuleset（可用性ゲート＋scaffold_level＋severity_weights）
 ##   options: 任意の上書き。
 ##            {
-##              "c_override": float (0..100) — 指定すれば C を上書き（spell_lab スライダ用）
-##              "rng_seed":   int            — Resolver の seed 固定。0 はランダム
+##              "c_override":     float (0..100) — 指定すれば C を上書き（spell_lab スライダ用）
+##              "rng_seed":       int            — Resolver の seed 固定。0 はランダム
+##              "spatial_context": SpatialContext or null — INC-3 v0.9 新規。位置あり詠唱の元データ
 ##            }
 ## 戻り値: 4子モデル全てが populated な CastResult。
 func cast(tokens_in: Array, ruleset: Resource, options: Dictionary = {}) -> CastResult:
@@ -39,6 +40,11 @@ func cast(tokens_in: Array, ruleset: Resource, options: Dictionary = {}) -> Cast
 	# Evaluator → EffectSpec / P_base
 	var effect_spec: EffectSpec = SpellEvaluator.evaluate(ast, word_lookup, ruleset)
 
+	# SpatialResolver → TargetSet (INC-3 v0.9 新規、09 §7.4)
+	# spatial_context が null なら null を返し後方互換維持
+	var spatial_context = options.get("spatial_context", null)
+	var target_set: TargetSet = SpatialResolver.resolve(ast, spatial_context, ruleset)
+
 	# C: options.c_override > 使用語の comprehension 加重平均（Lexicon 経由）
 	var c_weighted: float = 0.0
 	if options.has("c_override"):
@@ -57,6 +63,7 @@ func cast(tokens_in: Array, ruleset: Resource, options: Dictionary = {}) -> Cast
 	result.grammar_report = grammar_report
 	result.effect_spec = effect_spec
 	result.resolved = resolved
+	result.target_set = target_set
 	result.debug = {
 		"C": c_weighted,
 		"G": g_score,

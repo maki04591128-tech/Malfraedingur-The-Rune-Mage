@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="TileKind" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/tiles/tile_kind.gd" id="1_tile"]
+
+[resource]
+script = ExtResource("1_tile")
+id = "wall"
+passable = false
+blocks_sight = true
+blocks_spell_path = true
+role = "wall"
+interactable = false
+source = "オリジナル"
+verified = true

@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="WordResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/words/word_resource.gd" id="1_word"]
+
+[resource]
+script = ExtResource("1_word")
+id = "vinstri"
+word_class = "direction"
+gloss = {
+"en": "leftward",
+"ja": "左へ"
+}
+reading_kana = "ヴィンストリ"
+ipa = "ˈvinstri"
+gender = ""
+tier = 1
+comprehension_default = 0
+inflection = {}
+governs_case = ""
+function_role = ""
+discovery = PackedStringArray("inscription")
+element = {}
+spatial = {
+"kind": "direction",
+"params": {
+"axis": "left"
+}
+}
+source = "CV s.v. vinstri (til vinstri; DSL 簡略)"
+confidence = "review"
+verified = false

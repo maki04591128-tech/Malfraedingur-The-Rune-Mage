@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="WordResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/words/word_resource.gd" id="1_word"]
+
+[resource]
+script = ExtResource("1_word")
+id = "hoegri"
+word_class = "direction"
+gloss = {
+"en": "rightward",
+"ja": "右へ"
+}
+reading_kana = "ヘグリ"
+ipa = "ˈhœɣri"
+gender = ""
+tier = 1
+comprehension_default = 0
+inflection = {}
+governs_case = ""
+function_role = ""
+discovery = PackedStringArray("inscription")
+element = {}
+spatial = {
+"kind": "direction",
+"params": {
+"axis": "right"
+}
+}
+source = "CV s.v. hœgri (古綴; 現代 hægri)"
+confidence = "review"
+verified = false

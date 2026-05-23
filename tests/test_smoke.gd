@@ -788,6 +788,232 @@ func _ready() -> void:
 	r.assert_eq(int(snap["enemies"][0]["hp"]), 0, "snapshot: 雑魚 HP=0")
 	r.assert_eq(int(snap["enemies"][1]["hp"]), 0, "snapshot: ボス HP=0")
 
+	# ============================================================================
+	# INC-3 v0.9 新規: マス目移動・シームレス戦闘の最小縦切り検証
+	# ============================================================================
+	print("--- INC-3 v0.9: マス目移動・シームレス戦闘 ---")
+
+	# INC-3.1: 範囲語・方向語 WordResource が読めて spatial フィールドが揃う
+	var naer: WordResource = load("res://data/words/naer.tres") as WordResource
+	r.assert_not_null(naer, "INC-3: naer.tres loads")
+	if naer != null:
+		r.assert_eq(naer.word_class, "range", "naer.word_class = range")
+		r.assert_true(naer.spatial.has("kind"), "naer.spatial.kind exists")
+		r.assert_eq(String(naer.spatial.get("kind", "")), "distance", "naer.spatial.kind = distance")
+
+	var fram: WordResource = load("res://data/words/fram.tres") as WordResource
+	r.assert_not_null(fram, "INC-3: fram.tres loads")
+	if fram != null:
+		r.assert_eq(fram.word_class, "direction", "fram.word_class = direction")
+		var fp = fram.spatial.get("params", {})
+		r.assert_eq(String(fp.get("axis", "")), "forward", "fram.spatial.params.axis = forward")
+
+	var i_gegnum: WordResource = load("res://data/words/i_gegnum.tres") as WordResource
+	r.assert_not_null(i_gegnum, "INC-3: i_gegnum.tres loads (line_pierce)")
+	if i_gegnum != null:
+		var ip = i_gegnum.spatial.get("params", {})
+		r.assert_eq(String(ip.get("shape", "")), "line_pierce", "i_gegnum.spatial.params.shape = line_pierce")
+
+	# range/direction バリデーション
+	var bad := WordResource.new()
+	bad.id = "bad_range"
+	bad.word_class = "range"
+	bad.gloss = {"ja": "x"}
+	bad.tier = 1
+	# spatial を空のまま validate → エラーが出るはず
+	var errs := bad.validate()
+	r.assert_true(errs.size() > 0, "range word without spatial → validation error")
+
+	# INC-3.2: TileKind が読めて wall/floor/stairs_down/player_start が揃う
+	var t_floor: TileKind = load("res://data/tiles/floor.tres") as TileKind
+	var t_wall: TileKind = load("res://data/tiles/wall.tres") as TileKind
+	var t_stairs: TileKind = load("res://data/tiles/stairs_down.tres") as TileKind
+	var t_start: TileKind = load("res://data/tiles/player_start.tres") as TileKind
+	r.assert_not_null(t_floor, "INC-3: floor.tres loads as TileKind")
+	r.assert_not_null(t_wall, "INC-3: wall.tres loads")
+	r.assert_not_null(t_stairs, "INC-3: stairs_down.tres loads")
+	r.assert_not_null(t_start, "INC-3: player_start.tres loads")
+	if t_wall != null:
+		r.assert_false(t_wall.passable, "wall not passable")
+		r.assert_true(t_wall.blocks_sight, "wall blocks sight")
+	if t_stairs != null:
+		r.assert_true(t_stairs.passable, "stairs_down passable")
+
+	# INC-3.3: FloorTemplate と EnemyResource が読める
+	var ft1: FloorTemplate = load("res://data/floors/helgrind_1.tres") as FloorTemplate
+	r.assert_not_null(ft1, "INC-3: helgrind_1.tres loads")
+	if ft1 != null:
+		r.assert_eq(ft1.depth, 1, "helgrind_1.depth = 1")
+		r.assert_eq(ft1.generation_method, "rooms_and_corridors", "helgrind_1.generation_method")
+		r.assert_true(ft1.fixed_start_room, "helgrind_1.fixed_start_room = true (09 §2.5)")
+		var ft1_errs := ft1.validate()
+		r.assert_eq(ft1_errs.size(), 0, "helgrind_1 validates")
+
+	var er_lesser: EnemyResource = load("res://data/enemies/draugr_lesser.tres") as EnemyResource
+	r.assert_not_null(er_lesser, "INC-3: draugr_lesser.tres loads")
+	if er_lesser != null:
+		r.assert_eq(er_lesser.id, "draugr_lesser", "draugr_lesser.id")
+		r.assert_eq(er_lesser.hp, 18, "draugr_lesser.hp = 18")
+		r.assert_eq(er_lesser.sight_radius, 4, "draugr_lesser.sight_radius = 4 (09 §5.2)")
+
+	# INC-3.4: DungeonGenerator がシード駆動で同一マップ生成（決定論性）
+	var DSEED = preload("res://core/map/models/dungeon_seed.gd")
+	var seed1 = DSEED.new(42, 0, 1)
+	var seed2 = DSEED.new(42, 0, 1)
+	var map_a = DungeonGenerator.generate(ft1, seed1)
+	var map_b = DungeonGenerator.generate(ft1, seed2)
+	r.assert_not_null(map_a, "INC-3: DungeonGenerator.generate() returns MapData")
+	if map_a != null and map_b != null:
+		r.assert_eq(map_a.size, map_b.size, "DungeonGenerator: 同seed → 同 size")
+		r.assert_eq(map_a.rooms.size(), map_b.rooms.size(), "DungeonGenerator: 同seed → 同 room 数")
+		# player_start_pos も決定論
+		r.assert_eq(map_a.player_start_pos, map_b.player_start_pos, "DungeonGenerator: 同seed → 同 player_start_pos")
+		# 起点部屋が左上 (2, 2) 付近（fixed_start_room=true）
+		r.assert_true(map_a.player_start_pos.x >= 2 and map_a.player_start_pos.x < 15,
+			"helgrind_1 起点部屋 x ∈ [2,15) (fixed_start_room)")
+		# 階段配置済み
+		r.assert_true(map_a.stairs_down_pos.x >= 0, "stairs_down_pos が配置されている")
+		# 床が部屋数 × 部屋寸法分くらい存在する
+		var floor_count := 0
+		for y in range(map_a.size.y):
+			for x in range(map_a.size.x):
+				if map_a.get_tile(Vector2i(x, y)) == "floor":
+					floor_count += 1
+		r.assert_true(floor_count > 50, "DungeonGenerator: 床タイルが 50 個以上 (got %d)" % floor_count)
+
+	# INC-3.5: 異なる seed なら異なるマップ
+	var seed3 = DSEED.new(999, 0, 1)
+	var map_c = DungeonGenerator.generate(ft1, seed3)
+	if map_a != null and map_c != null:
+		# 起点部屋は固定だが、他の部屋数や配置が異なるはず
+		# (note: unused var was removed to avoid type infer issue)
+		var all_same: bool = true
+		if map_a.rooms.size() == map_c.rooms.size():
+			for i in range(map_a.rooms.size()):
+				var ra = map_a.rooms[i]
+				var rc = map_c.rooms[i]
+				if ra.x != rc.x or ra.y != rc.y:
+					all_same = false
+					break
+		else:
+			all_same = false
+		r.assert_false(all_same, "DungeonGenerator: 異seed → 異マップ")
+
+	# INC-3.6: Pathfinder が経路を返す（map_a で player_start から stairs まで）
+	if map_a != null:
+		var path = Pathfinder.find_path(map_a, map_a.player_start_pos, map_a.stairs_down_pos)
+		r.assert_true(path.size() > 0, "Pathfinder: start → stairs に経路あり")
+		if path.size() > 0:
+			r.assert_eq(path[0], map_a.player_start_pos, "path[0] = start")
+			r.assert_eq(path[path.size() - 1], map_a.stairs_down_pos, "path[-1] = stairs")
+		var next = Pathfinder.next_step_towards(map_a, map_a.player_start_pos, map_a.stairs_down_pos)
+		r.assert_true(next != map_a.player_start_pos, "next_step_towards: start から動く")
+
+	# INC-3.7: MapState が load_floor で初期化される
+	var ms := get_node("/root/MapState")
+	r.assert_not_null(ms, "MapState autoload exists")
+	if ms != null and ft1 != null:
+		var seed_x = DSEED.new(123, 0, 1)
+		ms.load_floor(ft1, seed_x)
+		r.assert_not_null(ms.map_data, "MapState.map_data populated after load_floor")
+		r.assert_true(ms.player_pos.x >= 0, "MapState.player_pos initialized")
+		r.assert_eq(ms.player_facing, ms.FACING_NORTH, "MapState.player_facing = NORTH on load")
+		r.assert_true(ms.fov_cache.size() > 0, "MapState.fov_cache populated")
+		# 起点部屋付近は視界内
+		r.assert_true(ms.is_visible(ms.player_pos), "player_pos is visible to self")
+
+	# INC-3.8: MapState.reset() が状態をクリア
+	if ms != null:
+		ms.reset()
+		r.assert_true(ms.map_data == null, "MapState.reset() clears map_data")
+		r.assert_eq(ms.player_pos, Vector2i(-1, -1), "MapState.reset() clears player_pos")
+		r.assert_eq(ms.fov_cache.size(), 0, "MapState.reset() clears fov_cache")
+
+	# INC-3.9: 巻き戻しでマップ再生成（同じ seed_x で同じマップになる = 決定論）
+	if ms != null and ft1 != null:
+		var seed_y1 = DSEED.new(456, 0, 1)
+		var seed_y2 = DSEED.new(456, 0, 1)
+		ms.load_floor(ft1, seed_y1)
+		var pos_a = ms.player_pos
+		ms.reset()
+		ms.load_floor(ft1, seed_y2)
+		var pos_b = ms.player_pos
+		r.assert_eq(pos_a, pos_b, "巻き戻し: 同 seed なら player_pos 同じ")
+
+	# INC-3.10: 方向語の相対方向計算（プレイヤー向き基準）
+	if ms != null and ft1 != null:
+		ms.load_floor(ft1, DSEED.new(789, 0, 1))
+		ms.player_facing = ms.FACING_NORTH
+		r.assert_eq(ms.get_relative_direction_vector("forward"), Vector2i(0, -1), "fram (forward) when N = (0,-1)")
+		r.assert_eq(ms.get_relative_direction_vector("right"),   Vector2i(1, 0),  "hoegri (right) when N = (1,0)")
+		r.assert_eq(ms.get_relative_direction_vector("backward"),Vector2i(0, 1),  "aptr (backward) when N = (0,1)")
+		r.assert_eq(ms.get_relative_direction_vector("left"),    Vector2i(-1, 0), "vinstri (left) when N = (-1,0)")
+		ms.player_facing = ms.FACING_EAST
+		r.assert_eq(ms.get_relative_direction_vector("forward"), Vector2i(1, 0),  "fram when E = (1,0)")
+		r.assert_eq(ms.get_relative_direction_vector("left"),    Vector2i(0, -1), "vinstri when E = (0,-1) = N")
+
+	# INC-3.11: SpatialContext.from_map_state() と nearest_enemy_in_sight
+	if ms != null and ft1 != null:
+		ms.load_floor(ft1, DSEED.new(2026, 0, 1))
+		var ctx = SpatialContext.from_map_state(ms)
+		r.assert_not_null(ctx, "SpatialContext.from_map_state() returns ctx")
+		if ctx != null:
+			r.assert_eq(ctx.player_pos, ms.player_pos, "ctx.player_pos = ms.player_pos")
+			# 視界内に敵がいなければ nearest_enemy_in_sight は空
+			# (helgrind_1 は敵が部屋内なので、起点部屋に居る限り視界内に敵がいる確率は低い)
+			var ne = ctx.nearest_enemy_in_sight()
+			r.assert_true(typeof(ne) == TYPE_DICTIONARY, "nearest_enemy_in_sight returns Dictionary")
+
+	# INC-3.12: SpatialResolver の後方互換 (spatial_context=null → null を返す)
+	var ts_null = SpatialResolver.resolve({"tokens": []}, null, null)
+	r.assert_true(ts_null == null, "SpatialResolver: spatial_context=null → null (後方互換)")
+
+	# INC-3.13: SpellEngine.cast() に spatial_context を渡せる (CastResult.target_set が populated)
+	if ms != null and ft1 != null and ruleset != null:
+		ms.load_floor(ft1, DSEED.new(2027, 0, 1))
+		# 起点部屋付近に敵がいない可能性が高いので、ダミー敵を直挿入
+		ms.map_data.enemies.append({
+			"id": "draugr_lesser",
+			"pos": ms.player_pos + Vector2i(1, 0),  # 隣接
+			"hp": 18, "atk": 6, "max_hp": 18,
+		})
+		ms._recompute_fov()
+		var ctx2 = SpatialContext.from_map_state(ms)
+		var tokens_pos = [
+			{"word_id": "meida", "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var cast_pos: CastResult = engine.cast(tokens_pos, ruleset, {"spatial_context": ctx2})
+		r.assert_not_null(cast_pos, "INC-3: cast with spatial_context returns CastResult")
+		if cast_pos != null:
+			r.assert_not_null(cast_pos.target_set, "CastResult.target_set populated when spatial_context given")
+			if cast_pos.target_set != null:
+				r.assert_true(cast_pos.target_set.reachable, "target_set.reachable = true (隣接敵あり)")
+				r.assert_eq(cast_pos.target_set.target_tiles.size(), 1, "target_set.target_tiles 1 個 (最隣接敵)")
+
+	# INC-3.14: GameState ループ管理
+	GameState.reset()
+	r.assert_eq(GameState.hp, GameState.PLAYER_MAX_HP, "GameState.reset() → HP MAX")
+	r.assert_eq(GameState.floor_index, 1, "GameState.reset() → floor 1")
+	r.assert_eq(GameState.world_time_remaining, GameState.LOOP_WORLD_TIME_BUDGET, "GameState.reset() → time MAX")
+	var rewind_due := GameState.advance_world_time(50.0)
+	r.assert_false(rewind_due, "GameState: 50 消費しても巻き戻しなし")
+	r.assert_eq(GameState.world_time_remaining, 118.0, "GameState: 168-50 = 118")
+	var rewind_now := GameState.advance_world_time(200.0)
+	r.assert_true(rewind_now, "GameState: 大量消費で巻き戻し条件成立")
+	r.assert_eq(GameState.world_time_remaining, 0.0, "GameState: 残量 0 でクランプ")
+
+	GameState.reset()
+	r.assert_eq(GameState.floor_index, 1, "GameState: reset 後 floor=1")
+	GameState.descend_floor()
+	GameState.descend_floor()
+	r.assert_eq(GameState.floor_index, 3, "GameState: descend x2 → floor 3")
+
+	# Cleanup
+	if ms != null:
+		ms.reset()
+	GameState.reset()
+
 	# --- INC-2 v0.4: SpellEngine → CombatSystem 統合 E2E テスト ---
 	# Resolver の確率挙動・GrammarReport・Evaluator が戦闘層と正しく繋がっていることを
 	# 固定 seed の連続詠唱で確認。phase_intermediate + C=100 + DAMAGE_SCALE=3.0 で

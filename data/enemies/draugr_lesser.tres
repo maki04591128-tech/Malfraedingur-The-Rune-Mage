@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="EnemyResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/enemies/enemy_resource.gd" id="1_enemy"]
+
+[resource]
+script = ExtResource("1_enemy")
+id = "draugr_lesser"
+name_loc = {
+"en": "Lesser Draugr",
+"ja": "下級ドラウグル"
+}
+hp = 18
+atk = 6
+weak_to = PackedStringArray("eldr")
+resist = PackedStringArray()
+sight_radius = 4
+behavior = "aggressive"
+drops = [{
+"word_id": "eldr",
+"chance": 0.25
+}]
+time_cost_on_fight_days = 0.2
+source = "オリジナル"
+verified = true
