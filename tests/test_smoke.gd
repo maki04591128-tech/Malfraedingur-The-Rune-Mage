@@ -969,15 +969,19 @@ func _ready() -> void:
 	r.assert_true(ts_null == null, "SpatialResolver: spatial_context=null → null (後方互換)")
 
 	# INC-3.13: SpellEngine.cast() に spatial_context を渡せる (CastResult.target_set が populated)
+	# v0.9.2: 扇状フィルタ ±45° 導入後、敵をプレイヤーの向き軸 (NORTH = -y) 方向に配置する必要
 	if ms != null and ft1 != null and ruleset != null:
 		ms.load_floor(ft1, DSEED.new(2027, 0, 1))
-		# 起点部屋付近に敵がいない可能性が高いので、ダミー敵を直挿入
+		ms.player_facing = ms.FACING_NORTH  # 明示
+		# プレイヤーの北 (-y 方向) に隣接敵を配置（v0.9.2 扇内）
 		ms.map_data.enemies.append({
 			"id": "draugr_lesser",
-			"pos": ms.player_pos + Vector2i(1, 0),  # 隣接
+			"pos": ms.player_pos + Vector2i(0, -1),  # 北隣 = 扇内 (NORTH 向き)
 			"hp": 18, "atk": 6, "max_hp": 18,
 		})
 		ms._recompute_fov()
+		# FOV に手動で敵タイルを追加（範囲外配置の場合の補助）
+		ms.fov_cache[ms.player_pos + Vector2i(0, -1)] = true
 		var ctx2 = SpatialContext.from_map_state(ms)
 		var tokens_pos = [
 			{"word_id": "meida", "case": ""},
@@ -988,8 +992,8 @@ func _ready() -> void:
 		if cast_pos != null:
 			r.assert_not_null(cast_pos.target_set, "CastResult.target_set populated when spatial_context given")
 			if cast_pos.target_set != null:
-				r.assert_true(cast_pos.target_set.reachable, "target_set.reachable = true (隣接敵あり)")
-				r.assert_eq(cast_pos.target_set.target_tiles.size(), 1, "target_set.target_tiles 1 個 (最隣接敵)")
+				r.assert_true(cast_pos.target_set.reachable, "target_set.reachable = true (北隣の敵、扇内)")
+				r.assert_eq(cast_pos.target_set.target_tiles.size(), 1, "target_set.target_tiles 1 個 (扇内最近敵)")
 
 	# INC-3.14: GameState ループ管理
 	GameState.reset()
@@ -1014,13 +1018,15 @@ func _ready() -> void:
 	#       advisory_findings に入る、grammar_report.overall_pass は維持される
 	if ms != null and ft1 != null and ruleset != null:
 		ms.load_floor(ft1, DSEED.new(3838, 0, 1))
-		# 起点部屋付近に敵を直挿入
+		ms.player_facing = ms.FACING_NORTH
+		# v0.9.2 扇内になるよう北隣に敵を配置
 		ms.map_data.enemies.append({
 			"id": "draugr_lesser",
-			"pos": ms.player_pos + Vector2i(1, 0),
+			"pos": ms.player_pos + Vector2i(0, -1),
 			"hp": 18, "atk": 6, "max_hp": 18,
 		})
 		ms._recompute_fov()
+		ms.fov_cache[ms.player_pos + Vector2i(0, -1)] = true
 		var ctx3 = SpatialContext.from_map_state(ms)
 		var tokens_dir = [
 			{"word_id": "fram", "case": ""},      # 方向語
@@ -1067,6 +1073,114 @@ func _ready() -> void:
 		if cast_conflict != null and cast_conflict.grammar_report != null:
 			# range_conflict は advisory（INC-3 では Validator にも Resolver にも反映されない、minor）
 			r.assert_true(cast_conflict.grammar_report.overall_pass, "INC-3.15: range_conflict があっても overall_pass=true (INC-3 暫定、INC-3.5 で重篤化予定)")
+
+	# ============================================================================
+	# INC-3 v0.9.2: 要求 1-4 (移動連続/扇状対象/キー再配置/魔法スロット) 検証
+	# ============================================================================
+	print("--- INC-3 v0.9.2: 要求 1-4 検証 ---")
+
+	# INC-3.16 (要求 2): SpatialContext.nearest_enemy_in_arc が向き軸±45°でフィルタリングする
+	if ms != null and ft1 != null:
+		ms.load_floor(ft1, DSEED.new(9201, 0, 1))
+		# プレイヤーを (10, 10) に固定、向き=NORTH=0、扇は (上方向 ±45°)
+		ms.player_pos = Vector2i(10, 10)
+		ms.player_facing = ms.FACING_NORTH
+		# 既存の自動配置敵を全クリア
+		ms.map_data.enemies.clear()
+		# テスト敵を 4 方向に配置:
+		#   北 (10, 7) = 扇内（forward 方向）
+		#   南 (10, 13) = 扇外（背後）
+		#   東 (13, 10) = 扇外（90° 横）
+		#   北東 (12, 8) = 扇内境界付近 (45° 以内: atan2(2,2)=45° ちょうど)
+		ms.map_data.enemies.append({"id":"draugr_lesser", "pos": Vector2i(10, 7),  "hp":18, "atk":6, "max_hp":18})  # 北
+		ms.map_data.enemies.append({"id":"draugr_lesser", "pos": Vector2i(10, 13), "hp":18, "atk":6, "max_hp":18})  # 南
+		ms.map_data.enemies.append({"id":"draugr_lesser", "pos": Vector2i(13, 10), "hp":18, "atk":6, "max_hp":18})  # 東
+		ms._recompute_fov()
+		# fov_cache に手動で全敵タイルを足す（テスト範囲外で FOV 計算するため簡略化）
+		for e in ms.map_data.enemies:
+			ms.fov_cache[Vector2i(e["pos"])] = true
+		var ctx_arc = SpatialContext.from_map_state(ms)
+		var near_arc = ctx_arc.nearest_enemy_in_arc(45.0)
+		r.assert_false(near_arc.is_empty(), "v0.9.2: 北向き ±45° 扇内に敵あり (北の敵)")
+		if not near_arc.is_empty():
+			r.assert_eq(Vector2i(near_arc["pos"]), Vector2i(10, 7), "v0.9.2: 扇内最近敵は北 (10,7)")
+		# nearest_enemy_in_sight (旧 = 全方向) と比較
+		var near_all = ctx_arc.nearest_enemy_in_sight()
+		r.assert_false(near_all.is_empty(), "v0.9.2: 全方向だと敵あり")
+		# 全方向の最近は南北東どれかでマンハッタン距離 3
+		# 向きを EAST に変更すると扇内が変わる
+		ms.player_facing = ms.FACING_EAST
+		var ctx_east = SpatialContext.from_map_state(ms)
+		var near_east = ctx_east.nearest_enemy_in_arc(45.0)
+		r.assert_false(near_east.is_empty(), "v0.9.2: 東向き ±45° 扇内に敵あり")
+		if not near_east.is_empty():
+			r.assert_eq(Vector2i(near_east["pos"]), Vector2i(13, 10), "v0.9.2: 東向き扇内最近敵は東 (13,10)")
+		# 向きを SOUTH に変更
+		ms.player_facing = ms.FACING_SOUTH
+		var ctx_south = SpatialContext.from_map_state(ms)
+		var near_south = ctx_south.nearest_enemy_in_arc(45.0)
+		r.assert_false(near_south.is_empty(), "v0.9.2: 南向き扇内に敵あり (南の敵)")
+		if not near_south.is_empty():
+			r.assert_eq(Vector2i(near_south["pos"]), Vector2i(10, 13), "v0.9.2: 南向き扇内最近敵は南 (10,13)")
+
+	# INC-3.17 (要求 2): SpatialResolver が扇外なら no_target_in_arc を返す
+	if ms != null and ft1 != null:
+		ms.load_floor(ft1, DSEED.new(9202, 0, 1))
+		ms.player_pos = Vector2i(10, 10)
+		ms.player_facing = ms.FACING_NORTH
+		ms.map_data.enemies.clear()
+		# 南にだけ敵を配置 → 北向きの扇外
+		ms.map_data.enemies.append({"id":"draugr_lesser", "pos": Vector2i(10, 13), "hp":18, "atk":6, "max_hp":18})
+		ms._recompute_fov()
+		for e in ms.map_data.enemies:
+			ms.fov_cache[Vector2i(e["pos"])] = true
+		var ctx_outside = SpatialContext.from_map_state(ms)
+		var tokens_arc = [
+			{"word_id": "meida", "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var cast_outside = engine.cast(tokens_arc, ruleset, {"spatial_context": ctx_outside})
+		if cast_outside != null and cast_outside.target_set != null:
+			r.assert_false(cast_outside.target_set.reachable, "v0.9.2: 扇外の敵には届かない (reachable=false)")
+			r.assert_true(cast_outside.target_set.advisory_findings.has("no_target_in_arc"), "v0.9.2: advisory_findings に no_target_in_arc")
+
+	# INC-3.18 (要求 4): Lexicon の魔法スロット get/set
+	var lex_slot := get_node("/root/Lexicon")
+	if lex_slot != null:
+		r.assert_true(lex_slot.has_method("get_spell_slot"), "Lexicon.get_spell_slot exists")
+		r.assert_true(lex_slot.has_method("set_spell_slot"), "Lexicon.set_spell_slot exists")
+		# デフォルトスロット 1
+		var slot1 = lex_slot.get_spell_slot(1)
+		r.assert_true(slot1.size() >= 2, "v0.9.2: スロット 1 デフォルト (meida + fjandi)")
+		if slot1.size() >= 2:
+			r.assert_eq(String(slot1[0].get("word_id", "")), "meida", "v0.9.2: slot 1[0].word_id = meida")
+			r.assert_eq(String(slot1[1].get("word_id", "")), "fjandi", "v0.9.2: slot 1[1].word_id = fjandi")
+		# スロット 2 は未設定で空
+		var slot2_empty = lex_slot.get_spell_slot(2)
+		r.assert_eq(slot2_empty.size(), 0, "v0.9.2: スロット 2 は初期未設定で空")
+		# スロット 2 に設定
+		var new_tokens = [
+			{"word_id": "eldr", "case": ""},
+			{"word_id": "meida", "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		lex_slot.set_spell_slot(2, new_tokens)
+		var slot2_set = lex_slot.get_spell_slot(2)
+		r.assert_eq(slot2_set.size(), 3, "v0.9.2: 設定後スロット 2 サイズ 3")
+		if slot2_set.size() >= 1:
+			r.assert_eq(String(slot2_set[0].get("word_id", "")), "eldr", "v0.9.2: 設定後 slot 2[0].word_id = eldr")
+		# 範囲外スロット
+		var slot_invalid = lex_slot.get_spell_slot(6)
+		r.assert_eq(slot_invalid.size(), 0, "v0.9.2: スロット範囲外は空")
+		lex_slot.set_spell_slot(0, new_tokens)
+		r.assert_eq(lex_slot.get_spell_slot(0).size(), 0, "v0.9.2: スロット 0 は受け付けない")
+		# 全スロットスナップショット
+		r.assert_true(lex_slot.has_method("get_all_spell_slots"), "Lexicon.get_all_spell_slots exists")
+		var all_slots = lex_slot.get_all_spell_slots()
+		r.assert_eq(all_slots.size(), 5, "v0.9.2: 全スロット数 5")
+		r.assert_true(all_slots.has(1) and all_slots.has(5), "v0.9.2: スロット 1〜5 が辞書に含まれる")
+		# cleanup
+		lex_slot.set_spell_slot(2, [])
 
 	# Cleanup
 	if ms != null:

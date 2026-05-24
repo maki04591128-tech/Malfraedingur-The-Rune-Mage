@@ -50,8 +50,13 @@ var game_over: bool = false
 var log_lines: PackedStringArray = PackedStringArray()
 const LOG_MAX_LINES := 6
 
-# 詠唱モード UI
-var spell_input_active: bool = false
+# INC-3 v0.9.2: モーダル UI 状態（旧 spell_input_active は要求 3 の 1 ステップ詠唱化で廃止）
+var spell_builder_modal: Node = null   ## F キーで開く spell_builder のインスタンス
+
+# INC-3 v0.9.2 (要求 1): 移動キー長押しのリピート制御。
+# OS のキーリピート echo は Godot 4 で安定しないため、_process で polling する方式に変更。
+const MOVE_REPEAT_DELAY := 0.12  ## 秒。連続移動の間隔（小さくするほど速い）
+var _move_cooldown: float = 0.0
 
 
 func _ready() -> void:
@@ -138,6 +143,41 @@ func _load_floor_for(depth: int) -> void:
 
 # --- 入力 ---
 
+## INC-3 v0.9.2 (要求 4): spell_builder モーダル表示中の ESC / F 捕捉（_input は最優先）。
+## CanvasLayer 上の spell_builder が _unhandled_key_input を消費するため、こちらで先取り。
+func _input(event: InputEvent) -> void:
+	if spell_builder_modal == null:
+		return
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	if event.keycode == KEY_ESCAPE or event.keycode == KEY_F:
+		_close_spell_builder_modal()
+		get_viewport().set_input_as_handled()
+
+
+## INC-3 v0.9.2 (要求 1): _process で移動キー押下を polling し、連続移動を実現。
+## _unhandled_key_input の echo より確実（OS リピート設定に依存しない）。
+func _process(delta: float) -> void:
+	if game_over or spell_builder_modal != null:
+		return
+	_move_cooldown = max(0.0, _move_cooldown - delta)
+	if _move_cooldown > 0.0:
+		return
+	var dx: int = 0
+	var dy: int = 0
+	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
+		dy = -1
+	elif Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
+		dy = 1
+	elif Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
+		dx = -1
+	elif Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
+		dx = 1
+	if dx != 0 or dy != 0:
+		_player_action_move(dx, dy)
+		_move_cooldown = MOVE_REPEAT_DELAY
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
@@ -148,31 +188,33 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_update_hud()
 		return
 
-	# 詠唱モード
-	if spell_input_active:
+	# モーダル表示中は ESC のみ受け付け（F で開いた spell_builder を閉じる）
+	if spell_builder_modal != null:
 		if event.keycode == KEY_ESCAPE:
-			spell_input_active = false
-			_log("詠唱中止")
-		elif event.keycode == KEY_ENTER or event.keycode == KEY_SPACE:
-			spell_input_active = false
-			_cast_meida_fjanda()
+			_close_spell_builder_modal()
 		return
 
 	match event.keycode:
-		KEY_W, KEY_UP:
-			_player_action_move(0, -1)
-		KEY_S, KEY_DOWN:
-			_player_action_move(0, 1)
-		KEY_A, KEY_LEFT:
-			_player_action_move(-1, 0)
-		KEY_D, KEY_RIGHT:
-			_player_action_move(1, 0)
+		# 移動キーは _process で polling 処理（v0.9.2 要求 1、長押し連続移動）
 		KEY_Q:
 			_player_action_turn(-1)
 		KEY_E:
 			_player_action_turn(1)
+		# --- INC-3 v0.9.2 (要求 3/4): キー再配置 ---
+		KEY_1:
+			_cast_slot(1)
+		KEY_2:
+			_cast_slot(2)
+		KEY_3:
+			_cast_slot(3)
+		KEY_4:
+			_cast_slot(4)
+		KEY_5:
+			_cast_slot(5)
 		KEY_SPACE:
-			_open_spell_input()
+			_player_action_wait_and_heal()
+		KEY_F:
+			_open_spell_builder_modal()
 		KEY_ENTER:
 			_try_descend_stairs()
 		# --- INC-3 検証用デバッグキー（INC-3.5 以降は削除候補） ---
@@ -218,33 +260,86 @@ func _player_action_turn(direction: int) -> void:
 	_update_hud()
 
 
-func _open_spell_input() -> void:
-	# INC-3 最小: 隣接敵に対する `meiða fjanda` を発動する確認ダイアログ的なものを
-	# 文字 UI で簡易表示。SpellComposer フル統合は INC-3.5。
-	spell_input_active = true
-	var nearest := MapState.nearest_enemy_in_sight()
-	if nearest.is_empty():
-		_log("[color=#888]視界内に敵がいない[/color]")
-		spell_input_active = false
+## INC-3 v0.9.2 (要求 3/4): スロット呼び出し詠唱。
+## スロット 1-5 から Lexicon._spell_slots のトークン列を取得して即詠唱。
+## スロット 1 はデフォルトで meida fjanda、F キーで作成した呪文を 2-5 にも割当可能。
+## 対象は SpatialResolver が向き±45° 扇内の最近敵を自動選択（要求 2）。
+func _cast_slot(slot: int) -> void:
+	var tokens_in: Array = Lexicon.get_spell_slot(slot)
+	if tokens_in.is_empty():
+		_log("[color=#888]スロット %d に魔法が割り当てられていません (F で割当)[/color]" % slot)
 		return
-	_log("[color=#f0d080]詠唱準備: meiða fjanda (Enter で実行 / ESC で中止)[/color]")
-
-
-func _cast_meida_fjanda() -> void:
-	# INC-3 最小詠唱: タイル ["meida", "fjanda"]、ruleset phase_intermediate
 	var ruleset: Resource = load("res://data/grammar/phase_intermediate.tres")
-	var tokens_in: Array = [
-		{"word_id": "meida", "case": ""},
-		{"word_id": "fjandi", "case": "acc"},
-	]
 	var spatial_ctx = SPATIAL_CONTEXT.from_map_state(MapState)
 	var result: CastResult = SpellEngine.cast(tokens_in, ruleset, {
 		"spatial_context": spatial_ctx,
 	})
+	# 詠唱の語句概要をログに（スロット番号と共に）
+	var preview: Array = []
+	for t in tokens_in:
+		preview.append(String(t.get("word_id", "?")))
+	_log("[color=#a0c8f0]🎯 スロット %d: %s[/color]" % [slot, " ".join(preview)])
 	_apply_cast_result(result)
-	_advance_world_time(2.0)  ## 簡易 Δ_cast = 2.0 (語数2 × 0.5 + 1.0)
+	# Δ_cast = 1.0 + 0.5 × 語数 + 0.5 × 語ティア合計（簡易近似で 1.0 + 1.0×語数）
+	var delta: float = 1.0 + 0.5 * float(tokens_in.size())
+	_advance_world_time(delta)
 	_enemies_take_turn()
 	queue_redraw()
+	_update_hud()
+
+
+## INC-3 v0.9.2 (要求 3): 待機 + HP+1 回復。1 ターン消費 + 世界時間 Δ=1.0。
+## Space キーで発動。詠唱と同じくらいのテンポで「治癒呪文の代用」的に使える。
+func _player_action_wait_and_heal() -> void:
+	var healed: int = min(1, GameState.PLAYER_MAX_HP - GameState.hp)
+	GameState.hp = min(GameState.PLAYER_MAX_HP, GameState.hp + 1)
+	if healed > 0:
+		_log("[color=#8fc]🌿 待機 (HP +%d → %d)[/color]" % [healed, GameState.hp])
+	else:
+		_log("[color=#888]🌿 待機 (HP %d、既に最大)[/color]" % GameState.hp)
+	_advance_world_time(1.0)
+	_enemies_take_turn()
+	queue_redraw()
+	_update_hud()
+
+
+## INC-3 v0.9.2 (要求 4): F キーで spell_builder.tscn をモーダル表示。
+## CanvasLayer に重ねて instantiate、ESC で閉じる。spell_builder 側に「スロット保存」UI を別途追加予定。
+func _open_spell_builder_modal() -> void:
+	if spell_builder_modal != null:
+		return
+	var scene: PackedScene = load("res://scenes/debug/spell_builder.tscn")
+	if scene == null:
+		_log("[color=#e88]spell_builder.tscn が読み込めません[/color]")
+		return
+	var inst: Node = scene.instantiate()
+	# 既存 HUD レイヤーの上に重ねる
+	var hud_layer: CanvasLayer = get_node_or_null("HUDLayer")
+	if hud_layer != null:
+		# 別レイヤーで上に
+		var modal_layer := CanvasLayer.new()
+		modal_layer.name = "SpellBuilderModalLayer"
+		modal_layer.layer = 2  # HUD より上
+		add_child(modal_layer)
+		modal_layer.add_child(inst)
+		spell_builder_modal = modal_layer
+	else:
+		add_child(inst)
+		spell_builder_modal = inst
+	_log("[color=#a0c8f0]F: spell_builder を開きました (ESC で閉じる)[/color]")
+	# 今後: spell_builder に「現在のトークン列をスロット N に保存」ボタンを追加し、
+	# 押下時に Lexicon.set_spell_slot(N, tokens) を呼ぶ。INC-3 v0.9.2 では UI 雛形のみ。
+	# 暫定: モーダル内のキーボード入力は spell_builder 側が消費するため、
+	# dungeon_view 側は ESC のみ反応。
+
+
+## モーダルを閉じる。
+func _close_spell_builder_modal() -> void:
+	if spell_builder_modal == null:
+		return
+	spell_builder_modal.queue_free()
+	spell_builder_modal = null
+	_log("[color=#888]spell_builder を閉じました[/color]")
 	_update_hud()
 
 
@@ -394,7 +489,7 @@ func _update_hud() -> void:
 	var facing_str: String = facing_names[MapState.player_facing]
 	var in_sight: int = MapState.enemies_in_sight().size()
 	var mode: String = "[警戒]" if in_sight > 0 else "[平時]"
-	hud_label.text = "%s | 位置 %s 向き %s | 視界内 %d 体 %s\nWASD/矢印=移動  Q/E=旋回  Space=詠唱  Enter=階段" % [
+	hud_label.text = "%s | 位置 %s 向き %s | 視界内 %d 体 %s\nWASD/矢印=移動(長押し可)  Q/E=旋回  1-5=スロット詠唱(±45°扇)  Space=待機+HP回復  F=魔法作成  Enter=階段" % [
 		status, pos_str, facing_str, in_sight, mode
 	]
 	_render_log()

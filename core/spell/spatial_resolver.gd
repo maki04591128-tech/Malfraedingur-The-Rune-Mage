@@ -52,11 +52,14 @@ static func resolve(ast: Dictionary, spatial_context, _ruleset) -> TargetSet:
 	if range_tokens.size() >= 2:
 		result.advisory_findings["range_conflict"] = "範囲語が複数指定されています（INC-3.5 で詳細判定）"
 
-	# INC-3 デフォルト動作: 最隣接敵を対象に
-	var nearest = spatial_context.nearest_enemy_in_sight()
+	# INC-3 v0.9.2 動作: 向き軸 ±45° の扇状範囲内の最近敵を対象に
+	# （v0.9.1 までは視界内全敵から最近敵。v0.9.2 で「向いている方向にしか撃てない」に変更）
+	# 扇外に敵がいても「方向違い」で当たらない仕様。 INC-3.5 で方向語 (fram/aptr/...) を
+	# 解釈してこの軸を変える予定。
+	var nearest = spatial_context.nearest_enemy_in_arc(45.0)
 	if nearest.is_empty():
 		result.reachable = false
-		result.advisory_findings["no_target"] = "視界内に敵がいない"
+		result.advisory_findings["no_target_in_arc"] = "向いている方向の扇状範囲 (±45°) に視界内の敵がいない"
 		return result
 
 	result.target_tiles = [Vector2i(nearest["pos"])]

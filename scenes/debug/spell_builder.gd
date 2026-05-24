@@ -333,6 +333,45 @@ func _build_ui() -> void:
 	_result_label.text = "[i]未詠唱[/i]"
 	root.add_child(_result_label)
 
+	# --- INC-3 v0.9.2 (要求 4): スロット 1-5 への保存パネル ---
+	# dungeon_view から F キーで開いた時に、現在のトークン列 _spell を Lexicon._spell_slots に保存できる。
+	# 独立シーンとして起動した場合も使えるが用途は dungeon_view からの呼び出しが主。
+	var slot_panel := HBoxContainer.new()
+	slot_panel.add_theme_constant_override("separation", 8)
+	root.add_child(slot_panel)
+
+	var slot_header := Label.new()
+	slot_header.text = "魔法スロット保存:"
+	slot_panel.add_child(slot_header)
+
+	for i in range(1, 6):
+		var slot_btn := Button.new()
+		slot_btn.text = "スロット %d に保存" % i
+		var captured_slot: int = i
+		slot_btn.pressed.connect(func(): _on_save_to_slot(captured_slot))
+		slot_panel.add_child(slot_btn)
+
+	var slot_hint := Label.new()
+	slot_hint.text = "  (ESC で dungeon に戻る)"
+	slot_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	slot_panel.add_child(slot_hint)
+
+
+## INC-3 v0.9.2: スロット保存ハンドラ。
+func _on_save_to_slot(slot: int) -> void:
+	if _spell.is_empty():
+		_result_label.text = "[color=#e88]✗ スロット %d: 保存する呪文がありません（タイルを並べてから）[/color]" % slot
+		return
+	var lex := get_node_or_null("/root/Lexicon")
+	if lex == null or not lex.has_method("set_spell_slot"):
+		_result_label.text = "[color=#e88]✗ Lexicon.set_spell_slot が利用できません[/color]"
+		return
+	lex.set_spell_slot(slot, _spell)
+	var preview: Array = []
+	for t in _spell:
+		preview.append(String(t.get("word_id", "?")))
+	_result_label.text = "[color=#8fc]✦ スロット %d に保存: %s[/color]" % [slot, " ".join(preview)]
+
 
 ## タイルボタンを 1 個作る。
 func _add_tile_button(parent: Node, res: WordResource) -> void:
