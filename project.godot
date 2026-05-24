@@ -15,10 +15,6 @@ run/main_scene="res://scenes/dungeon/dungeon_view.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
-[display]
-
-window/subwindows/embed_subwindows=false
-
 [autoload]
 
 EventBus="*res://autoload/event_bus.gd"
@@ -26,6 +22,10 @@ Lexicon="*res://autoload/lexicon.gd"
 GameState="*res://autoload/game_state.gd"
 SpellEngine="*res://autoload/spell_engine.gd"
 MapState="*res://autoload/map_state.gd"
+
+[display]
+
+window/subwindows/embed_subwindows=false
 
 [internationalization]
 
