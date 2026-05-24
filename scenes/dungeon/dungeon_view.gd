@@ -143,6 +143,9 @@ func _load_floor_for(depth: int) -> void:
 			e["max_hp"] = er.hp
 	_log("[color=#a0c8f0]Helgrind 第 %d 階へ[/color]" % depth)
 	EventBus.floor_changed.emit(depth, "enter")
+	# v0.9.4 (持ち越し 1): 階段降下後に HUD を即更新（v0.9.1 で発見した軽微バグ修正）
+	_update_hud()
+	queue_redraw()
 
 
 # --- 入力 ---
@@ -227,32 +230,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 	# v0.9.3: 移動/旋回/詠唱/待機は _process で polling 処理（長押し連続）。
 	# 単発の F (ウィンドウ開く) / Enter (階段) のみここで処理。
-	# H/T/G デバッグキーは下記既存ブロックで処理。
+	# v0.9.4: INC-3 検証用 DEBUG キー H/T/G は削除（INC-3 検証完了済み、INC-3.5 では不要）。
 	match event.keycode:
 		KEY_F:
 			_open_spell_builder_modal()
 		KEY_ENTER:
 			_try_descend_stairs()
-		# --- INC-3 検証用デバッグキー（INC-3.5 以降は削除候補） ---
-		KEY_H:
-			# DEBUG: 致命的ダメージで死亡 → _trigger_rewind("death")
-			_log("[color=#888]DEBUG: take_damage(999) → 死亡テスト[/color]")
-			if GameState.take_damage(999):
-				_trigger_rewind("death")
-			_update_hud()
-		KEY_T:
-			# DEBUG: 大量時間消費で時間切れ → _trigger_rewind("timeout")
-			_log("[color=#888]DEBUG: advance_world_time(999) → 時間切れテスト[/color]")
-			if GameState.advance_world_time(999.0):
-				_trigger_rewind("timeout")
-			_update_hud()
-		KEY_G:
-			if MapState.map_data != null and MapState.map_data.stairs_down_pos.x >= 0:
-				MapState.player_pos = MapState.map_data.stairs_down_pos
-				MapState._recompute_fov()
-				_log("[color=#888]DEBUG: teleport to stairs (%d, %d)[/color]" % [MapState.player_pos.x, MapState.player_pos.y])
-				queue_redraw()
-				_update_hud()
 
 
 func _player_action_move(dx: int, dy: int) -> void:
