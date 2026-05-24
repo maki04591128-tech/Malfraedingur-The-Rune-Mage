@@ -22,6 +22,10 @@ static var MISFIRE_MULT_BY_RULE: Dictionary = {
 	"elements":            1.5,   # v0.13: 半端な属性合成は不発
 	"modifier":            1.5,   # v0.13: 修飾語単独詠唱の構文エラー（最小）
 	"modifier_agreement":  2.0,   # v0.14: 修飾語の性・数・格不一致（古ノルド語の正確な活用）
+	# === INC-3.5 v0.9.5 新規（03 §3.3 v0.18 / 09 §7.3）===
+	"range_required":      2.0,   # 射程外 — SpatialResolver が finding を立てる
+	"range_conflict":      3.0,   # 範囲語が複数（nær×fjarri など） — Validator が立てる
+	"direction_required":  2.0,   # 形状系範囲語に方向指定なし — Validator が立てる
 }
 
 ## tier 別の variance 上限（暫定値・INC-2 で BalanceConfig 化、v0.17 でチューニング可能化）。

@@ -7,6 +7,8 @@ class_name SpellParser
 ## 出典: 03 §3.1, §4, 04 §4。
 ##
 ## INC-1: 効果語/対象語/属性語の役割分類まで。修飾・範囲・条件はストレッチ（§6.2）。
+## INC-3.5 v0.9.5: `ranges` / `directions` を AST に追加。Validator が range_conflict /
+##   direction_required を判定するために必要。
 
 ## トークン列 → SpellAST（辞書形）。
 ##   tokens: Tokenizer の出力 [{word_id, case, resource}, ...]
@@ -17,6 +19,8 @@ class_name SpellParser
 ##     "target": Token or null,
 ##     "elements": [Token, ...],
 ##     "modifiers": [Token, ...],   // INC-1 未使用（ストレッチ）
+##     "ranges":     [Token, ...],  // INC-3.5: 範囲語（nær/fjarri/vítt/í gegnum）
+##     "directions": [Token, ...],  // INC-3.5: 方向語（fram/aptr/vinstri/hœgri）
 ##     "word_order": [String, ...]  // word_class の出現順（語順ボーナス判定用）
 ##   }
 static func parse(tokens: Array) -> Dictionary:
@@ -24,6 +28,8 @@ static func parse(tokens: Array) -> Dictionary:
 	var target = null
 	var elements: Array = []
 	var modifiers: Array = []
+	var ranges: Array = []
+	var directions: Array = []
 	var word_order: Array = []
 
 	for tok in tokens:
@@ -44,8 +50,12 @@ static func parse(tokens: Array) -> Dictionary:
 				elements.append(tok)
 			"modifier":
 				modifiers.append(tok)
+			"range":
+				ranges.append(tok)
+			"direction":
+				directions.append(tok)
 			_:
-				# range / conditional / numeral / time_unit / suffix は INC-1 では未使用。
+				# conditional / numeral / time_unit / suffix(deprecated) は本作 INC では未使用。
 				pass
 
 	return {
@@ -54,5 +64,7 @@ static func parse(tokens: Array) -> Dictionary:
 		"target": target,
 		"elements": elements,
 		"modifiers": modifiers,
+		"ranges": ranges,
+		"directions": directions,
 		"word_order": word_order,
 	}

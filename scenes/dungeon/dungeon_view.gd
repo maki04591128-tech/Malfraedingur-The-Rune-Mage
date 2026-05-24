@@ -39,6 +39,12 @@ const COLOR_ENEMY := Color(0.85, 0.30, 0.25)
 const COLOR_BOSS := Color(0.95, 0.15, 0.15)
 const COLOR_FOV_HIGHLIGHT := Color(1, 1, 1, 0.05)
 
+## INC-3.5 v0.9.5: scaffold=max 射程プレビュー UI（09 §9）
+const COLOR_PREVIEW_TARGET := Color(0.20, 0.95, 0.30, 0.55)   # 緑: 着弾対象タイル
+const COLOR_PREVIEW_AOE    := Color(0.95, 0.85, 0.20, 0.30)   # 黄: AoE 範囲（敵いない部分）
+const COLOR_PREVIEW_RANGE_FAIL := Color(0.95, 0.20, 0.20, 0.45) # 赤: range_required で届かない
+const COLOR_PREVIEW_PIERCE := Color(0.70, 0.40, 0.95, 0.35)   # 紫: 貫通直線
+
 var floor_templates: Array = []         ## [helgrind_1, _2, _3] resources
 var enemy_db: Dictionary = {}            ## { "draugr_lesser": EnemyResource, ... }
 var rng_master_seed: int = 0             ## 巻き戻しでシフトしていく
@@ -480,6 +486,110 @@ func _draw() -> void:
 	var arrow_vec := Vector2(MapState.FACING_VECTORS[MapState.player_facing])
 	var arrow_end := p_center + arrow_vec * (TILE_SIZE / 2.0 - 2)
 	draw_line(p_center, arrow_end, Color(0.15, 0.10, 0.05), 2.0)
+
+	# === INC-3.5 v0.9.5: scaffold=max 射程プレビュー UI (09 §9) ===
+	# スロット 1 の呪文を「これから撃つ予定」として SpatialResolver でドライランし、
+	# 対象タイル/AoE/貫通/range_required をマップ上に描画する。
+	# game_over 中や別ウィンドウ展開中は省略（ノイズ低減）。
+	if not game_over and spell_builder_window == null:
+		_draw_preview_for_slot(1, origin)
+
+
+## INC-3.5 v0.9.5: スロットの呪文を SpatialResolver でドライランして射程プレビューを描く。
+##   slot: 1-5
+##   origin: _draw() で使ったマップ原点（プレイヤー基準）
+## scaffold=max の補助 UI を最小実装した版。dungeon_view 用に「常時スロット 1 を表示」する。
+func _draw_preview_for_slot(slot: int, origin: Vector2) -> void:
+	var tokens_in: Array = Lexicon.get_spell_slot(slot)
+	if tokens_in.is_empty() or MapState.map_data == null:
+		return
+	# 呪文を AST まで通して SpatialResolver にかける（Resolver は使わない＝コスト低）。
+	var word_lookup: Callable = Callable(Lexicon, "get_word") if Lexicon.has_method("get_word") else Callable()
+	var ruleset: Resource = load("res://data/grammar/phase_intermediate.tres")
+	var tokens: Array = SpellTokenizer.tokenize(tokens_in, ruleset, word_lookup)
+	var ast: Dictionary = SpellParser.parse(tokens)
+	var ctx: SpatialContext = SPATIAL_CONTEXT.from_map_state(MapState)
+	var ts: TargetSet = SpatialResolver.resolve(ast, ctx, ruleset)
+	if ts == null:
+		return
+
+	# 形状判定（AST.ranges から）
+	var range_kind: String = ""
+	var range_shape: String = ""
+	for r in ast.get("ranges", []):
+		var rres: WordResource = r.get("resource", null)
+		if rres != null:
+			range_kind = String(rres.spatial.get("kind", ""))
+			if range_kind == "shape":
+				var params_dict = rres.spatial.get("params", {})
+				if typeof(params_dict) == TYPE_DICTIONARY:
+					range_shape = String(params_dict.get("shape", ""))
+			break
+
+	# AoE 範囲（黄色、半透明）— 円 AoE のみ center 周辺を塗る
+	if range_shape == "circle_aoe" and ts.center_pos.x >= 0:
+		var radius: int = 2  # vítt の既定半径
+		for dy in range(-radius, radius + 1):
+			for dx in range(-radius, radius + 1):
+				if abs(dx) + abs(dy) > radius:
+					continue
+				var tile_pos: Vector2i = ts.center_pos + Vector2i(dx, dy)
+				if tile_pos.x < 0 or tile_pos.y < 0 or tile_pos.x >= MapState.map_data.size.x or tile_pos.y >= MapState.map_data.size.y:
+					continue
+				if not MapState.is_visible(tile_pos):
+					continue
+				var rp_aoe: Vector2 = origin + Vector2(tile_pos) * TILE_SIZE
+				draw_rect(Rect2(rp_aoe, Vector2(TILE_SIZE - 1, TILE_SIZE - 1)), COLOR_PREVIEW_AOE, true)
+
+	# 貫通直線（紫、半透明）— line_pierce のみ
+	if range_shape == "line_pierce":
+		var dir_vec: Vector2i = Vector2i.ZERO
+		for d in ast.get("directions", []):
+			var dres: WordResource = d.get("resource", null)
+			if dres != null:
+				var d_params = dres.spatial.get("params", {})
+				var axis: String = String(d_params.get("axis", "")) if typeof(d_params) == TYPE_DICTIONARY else ""
+				dir_vec = _vec_for_axis(MapState.player_facing, axis)
+				break
+		if dir_vec == Vector2i.ZERO:
+			dir_vec = MapState.FACING_VECTORS[MapState.player_facing]
+		var cur: Vector2i = MapState.player_pos + dir_vec
+		for _step in 30:
+			if cur.x < 0 or cur.y < 0 or cur.x >= MapState.map_data.size.x or cur.y >= MapState.map_data.size.y:
+				break
+			if MapState.is_visible(cur):
+				var rp_line: Vector2 = origin + Vector2(cur) * TILE_SIZE
+				draw_rect(Rect2(rp_line, Vector2(TILE_SIZE - 1, TILE_SIZE - 1)), COLOR_PREVIEW_PIERCE, true)
+			cur += dir_vec
+
+	# 対象タイル（緑）
+	for tgt in ts.target_tiles:
+		var tgt_pos: Vector2i = tgt
+		var rp_tgt: Vector2 = origin + Vector2(tgt_pos) * TILE_SIZE
+		draw_rect(Rect2(rp_tgt, Vector2(TILE_SIZE - 1, TILE_SIZE - 1)), COLOR_PREVIEW_TARGET, true)
+
+	# range_required で届かない (reachable=false) → 中心マスを赤で枠取り
+	if not ts.reachable and ts.center_pos.x >= 0 and MapState.is_visible(ts.center_pos):
+		var rp_fail: Vector2 = origin + Vector2(ts.center_pos) * TILE_SIZE
+		draw_rect(Rect2(rp_fail + Vector2(2, 2), Vector2(TILE_SIZE - 5, TILE_SIZE - 5)), COLOR_PREVIEW_RANGE_FAIL, false, 2.0)
+
+
+## SpatialResolver._vec_for_axis の dungeon_view ローカル版（const アクセス回避）
+static func _vec_for_axis(facing: int, axis: String) -> Vector2i:
+	var rel_offset := 0
+	match axis:
+		"forward":  rel_offset = 0
+		"right":    rel_offset = 1
+		"backward": rel_offset = 2
+		"left":     rel_offset = 3
+		_: return Vector2i.ZERO
+	var resolved: int = (facing + rel_offset) % 4
+	match resolved:
+		0: return Vector2i( 0, -1)
+		1: return Vector2i( 1,  0)
+		2: return Vector2i( 0,  1)
+		3: return Vector2i(-1,  0)
+		_: return Vector2i.ZERO
 
 
 func _update_hud() -> void:

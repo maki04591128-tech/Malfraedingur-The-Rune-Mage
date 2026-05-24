@@ -12,7 +12,7 @@ class_name FloorTemplate
 
 ## マップ生成パラメータ
 @export var generation_method: String = "rooms_and_corridors"
-@export var tile_size: Vector2i = Vector2i(40, 30)
+@export var tile_size: Vector2i = Vector2i(30, 25)  ## INC-3.5 v0.9.5 で 40×30 → 30×25 に縮小（02 §3 INC-3.5 持ち越し）
 @export var rooms_min: int = 5
 @export var rooms_max: int = 8
 @export var room_min_size: Vector2i = Vector2i(5, 4)

@@ -1060,7 +1060,9 @@ func _ready() -> void:
 		if cast_range != null and cast_range.grammar_report != null:
 			r.assert_true(cast_range.grammar_report.overall_pass, "INC-3.15: 範囲語+方向語でも overall_pass=true (INC-3 minor finding 暫定)")
 
-		# 範囲語が複数（INC-3 では advisory_findings に range_conflict が入るが minor）
+		# 範囲語が複数。INC-3.15 (INC-3) では ruleset が phase_intro (range:disabled) なので
+		# Validator のコア違反チェックは gate される → overall_pass=true 維持を再確認。
+		# INC-3.5 でコア違反扱いに格上げされる挙動は §INC-3.5 の S7 で phase_intermediate を使って検証する。
 		var tokens_conflict = [
 			{"word_id": "naer", "case": ""},
 			{"word_id": "fjarri", "case": ""},
@@ -1068,11 +1070,9 @@ func _ready() -> void:
 			{"word_id": "fjandi", "case": "acc"},
 		]
 		var cast_conflict: CastResult = engine.cast(tokens_conflict, ruleset, {"spatial_context": ctx3})
-		if cast_conflict != null and cast_conflict.target_set != null:
-			r.assert_true(cast_conflict.target_set.advisory_findings.has("range_conflict"), "INC-3.15: nær+fjarri で range_conflict が advisory_findings に入る (minor)")
 		if cast_conflict != null and cast_conflict.grammar_report != null:
-			# range_conflict は advisory（INC-3 では Validator にも Resolver にも反映されない、minor）
-			r.assert_true(cast_conflict.grammar_report.overall_pass, "INC-3.15: range_conflict があっても overall_pass=true (INC-3 暫定、INC-3.5 で重篤化予定)")
+			# phase_intro では range gate=off なので overall_pass は格・語順だけで決まる
+			r.assert_true(cast_conflict.grammar_report.overall_pass, "INC-3.15: phase_intro では range_conflict はチェックされない（gate off）→ overall_pass=true 維持")
 
 	# ============================================================================
 	# INC-3 v0.9.2: 要求 1-4 (移動連続/扇状対象/キー再配置/魔法スロット) 検証
@@ -1285,6 +1285,311 @@ func _ready() -> void:
 
 	# 後片付け
 	DamageCalculator.DAMAGE_SCALE = saved_scale
+
+	# ============================================================================
+	# INC-3.5 v0.9.5: 範囲語・方向語のコア違反扱い + SpatialResolver 本格化
+	# ============================================================================
+	print("--- INC-3.5 v0.9.5: 範囲語・方向語コア化 + 06/08 H/H2 再判定 ---")
+
+	# ---------------- INC-3.5 / 06 §6 H 再判定 ---------------------------------
+	# S7: range_conflict 単独 — nær fjarri meiða fjanda は overall_pass=false になり、
+	#     暴発確率に range_conflict (×3) が乗る
+	# S8: direction_required — vítt meiða fjanda（方向なし）は overall_pass=false、×2
+	# S9: 範囲語・方向語を正しく使えば overall_pass=true、G=1.0、misfire は文法ペナなし
+	var engine_35 := get_node("/root/SpellEngine")
+	var rs_inter_35: GrammarRuleset = load("res://data/grammar/phase_intermediate.tres") as GrammarRuleset
+	r.assert_not_null(engine_35, "INC-3.5: SpellEngine autoload")
+	r.assert_not_null(rs_inter_35, "INC-3.5: phase_intermediate ruleset")
+
+	if engine_35 != null and rs_inter_35 != null:
+		# S7: range_conflict (nær + fjarri)
+		var tokens_s7: Array = [
+			{"word_id": "naer",   "case": ""},
+			{"word_id": "fjarri", "case": ""},
+			{"word_id": "meida",  "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var cr_s7: CastResult = engine_35.cast(tokens_s7, rs_inter_35, {"c_override": 100.0, "rng_seed": 1})
+		r.assert_not_null(cr_s7, "S7: cast returns CastResult")
+		if cr_s7 != null and cr_s7.grammar_report != null:
+			r.assert_false(cr_s7.grammar_report.overall_pass, "S7: range_conflict で overall_pass=false")
+			var found_rc := false
+			for f in cr_s7.grammar_report.failures():
+				if String(f.get("rule", "")) == "range_conflict":
+					found_rc = true
+			r.assert_true(found_rc, "S7: failures に range_conflict 含む")
+			# 達人不変 (C=100) は維持される: base=0 なので合算しても暴発ゼロのはず
+			r.assert_eq(cr_s7.debug.get("misfire_base", 1.0), 0.0, "S7: C=100 で base=0 (達人不変)")
+			# misfire_chance も 0（base × Σmult = 0 × 3 = 0）
+			r.assert_eq(cr_s7.debug.get("misfire_chance", 1.0), 0.0, "S7: C=100 → range_conflict があっても暴発確率は 0 (T6)")
+			# C=50 で暴発が文法込みで上がることを確認
+			var cr_s7_c50: CastResult = engine_35.cast(tokens_s7, rs_inter_35, {"c_override": 50.0, "rng_seed": 1})
+			if cr_s7_c50 != null:
+				var p_base50: float = float(cr_s7_c50.debug.get("misfire_base", 0.0))
+				var p_actual50: float = float(cr_s7_c50.debug.get("misfire_chance", 0.0))
+				r.assert_true(p_actual50 > p_base50, "S7: C=50 で range_conflict があると暴発確率が base より上がる")
+
+		# S8: direction_required (vítt without direction)
+		var tokens_s8: Array = [
+			{"word_id": "vitt",   "case": ""},
+			{"word_id": "meida",  "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var cr_s8: CastResult = engine_35.cast(tokens_s8, rs_inter_35, {"c_override": 50.0, "rng_seed": 1})
+		r.assert_not_null(cr_s8, "S8: cast returns CastResult")
+		if cr_s8 != null and cr_s8.grammar_report != null:
+			r.assert_false(cr_s8.grammar_report.overall_pass, "S8: vítt without direction → overall_pass=false")
+			var found_dr := false
+			for f in cr_s8.grammar_report.failures():
+				if String(f.get("rule", "")) == "direction_required":
+					found_dr = true
+			r.assert_true(found_dr, "S8: failures に direction_required 含む")
+
+		# S8b: vítt + fram → direction_required は pass、overall_pass=true
+		var tokens_s8b: Array = [
+			{"word_id": "vitt",   "case": ""},
+			{"word_id": "fram",   "case": ""},
+			{"word_id": "meida",  "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var cr_s8b: CastResult = engine_35.cast(tokens_s8b, rs_inter_35, {"c_override": 100.0, "rng_seed": 1})
+		if cr_s8b != null and cr_s8b.grammar_report != null:
+			# spatial_context なしなので range_required は出ない。direction_required も pass。
+			r.assert_true(cr_s8b.grammar_report.overall_pass, "S8b: vítt + fram で overall_pass=true")
+
+		# S9: 範囲語・方向語の正しい組み合わせ — nær + fram + meiða + fjanda
+		var tokens_s9: Array = [
+			{"word_id": "naer",   "case": ""},
+			{"word_id": "fram",   "case": ""},
+			{"word_id": "meida",  "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var cr_s9: CastResult = engine_35.cast(tokens_s9, rs_inter_35, {"c_override": 100.0, "rng_seed": 1})
+		if cr_s9 != null and cr_s9.grammar_report != null:
+			r.assert_true(cr_s9.grammar_report.overall_pass, "S9: nær fram meiða fjanda は overall_pass=true (spatial_context なし)")
+			r.assert_eq(cr_s9.grammar_report.g_score, 1.0, "S9: G=1.0")
+
+	# ---------------- INC-3.5 / SpatialResolver 単体テスト -------------------
+	# SpatialContext を手で組んで、SpatialResolver の各経路を直接検証する。
+	var spatial_ctx_t := SpatialContext.new()
+	spatial_ctx_t.player_pos = Vector2i(10, 10)
+	spatial_ctx_t.player_facing = 0  # NORTH (= Vector2i(0, -1))
+	spatial_ctx_t.map_size = Vector2i(30, 25)
+	# 視界: プレイヤー周囲 15 マス全て見える
+	for vy in range(0, 25):
+		for vx in range(0, 30):
+			spatial_ctx_t.visible_tiles[Vector2i(vx, vy)] = true
+	# 敵を配置（同じ視界に複数）
+	spatial_ctx_t.enemies = [
+		{"id": "front_close",  "pos": Vector2i(10,  9), "hp": 10},  # 北 1 タイル先 (距離 1, fram nær 内)
+		{"id": "front_mid",    "pos": Vector2i(10,  7), "hp": 10},  # 北 3 タイル先 (距離 3, fjarri 内)
+		{"id": "front_far",    "pos": Vector2i(10,  3), "hp": 10},  # 北 7 タイル先 (距離 7, fjarri 内)
+		{"id": "right_close",  "pos": Vector2i(11, 10), "hp": 10},  # 東 1 タイル先
+		{"id": "back",         "pos": Vector2i(10, 12), "hp": 10},  # 南 2 タイル先
+	]
+	# wall_lookup: 壁なし
+	spatial_ctx_t.wall_lookup = func(_p): return false
+
+	# T1: 範囲語なし・方向語なし → 扇 ±45° 最近敵 = front_close
+	var ast_t1 := SpellParser.parse(SpellTokenizer.tokenize(
+		[{"word_id": "meida", "case": ""}, {"word_id": "fjandi", "case": "acc"}],
+		rs_inter_35,
+		Callable(Lexicon, "get_word")
+	))
+	var ts_t1 = SpatialResolver.resolve(ast_t1, spatial_ctx_t, rs_inter_35)
+	r.assert_not_null(ts_t1, "SR T1: 範囲・方向なし → TargetSet")
+	if ts_t1 != null:
+		r.assert_true(ts_t1.reachable, "SR T1: 扇内に敵あり → reachable")
+		r.assert_eq(ts_t1.target_tiles.size(), 1, "SR T1: 単体ターゲット")
+		r.assert_eq(String(ts_t1.target_enemy_ids[0]), "front_close", "SR T1: front_close を選択")
+
+	# T2: fram 単独 → 距離 1 (隣接) の北の敵 = front_close
+	var ast_t2 := SpellParser.parse(SpellTokenizer.tokenize(
+		[{"word_id": "fram", "case": ""}, {"word_id": "meida", "case": ""}, {"word_id": "fjandi", "case": "acc"}],
+		rs_inter_35,
+		Callable(Lexicon, "get_word")
+	))
+	var ts_t2 = SpatialResolver.resolve(ast_t2, spatial_ctx_t, rs_inter_35)
+	if ts_t2 != null:
+		r.assert_true(ts_t2.reachable, "SR T2: fram → 隣接の front_close 当たる")
+		r.assert_eq(String(ts_t2.target_enemy_ids[0]), "front_close", "SR T2: front_close")
+		r.assert_eq(String(ts_t2.used_direction_word), "fram", "SR T2: used_direction_word=fram")
+
+	# T3: nær fram → 距離 1-2 の北 = front_close
+	var ast_t3 := SpellParser.parse(SpellTokenizer.tokenize(
+		[{"word_id": "naer", "case": ""}, {"word_id": "fram", "case": ""}, {"word_id": "meida", "case": ""}, {"word_id": "fjandi", "case": "acc"}],
+		rs_inter_35,
+		Callable(Lexicon, "get_word")
+	))
+	var ts_t3 = SpatialResolver.resolve(ast_t3, spatial_ctx_t, rs_inter_35)
+	if ts_t3 != null:
+		r.assert_true(ts_t3.reachable, "SR T3: nær fram → front_close 当たる")
+		r.assert_eq(String(ts_t3.used_range_word), "naer", "SR T3: used_range_word=naer")
+
+	# T4: fjarri fram → 距離 3-8 の北 = front_mid (3) または front_far (7)。最初に出会う front_mid のはず
+	var ast_t4 := SpellParser.parse(SpellTokenizer.tokenize(
+		[{"word_id": "fjarri", "case": ""}, {"word_id": "fram", "case": ""}, {"word_id": "meida", "case": ""}, {"word_id": "fjandi", "case": "acc"}],
+		rs_inter_35,
+		Callable(Lexicon, "get_word")
+	))
+	var ts_t4 = SpatialResolver.resolve(ast_t4, spatial_ctx_t, rs_inter_35)
+	if ts_t4 != null:
+		r.assert_true(ts_t4.reachable, "SR T4: fjarri fram → 北 3 タイル先の front_mid")
+		r.assert_eq(String(ts_t4.target_enemy_ids[0]), "front_mid", "SR T4: fjarri fram → front_mid (距離 3 でレンジ内、front_close をスキップ)")
+
+	# T5: nær fram の射程外 — front_mid を狙うべく fjarri を nær にして失敗を見る
+	# プレイヤー位置を front_close から離す（位置 (10, 10) → (10, 5) にして fram で front_mid(10,7) が距離 2、front_far が距離 -2(後ろ) なので、まずは違う敵配置で見たい）
+	# シンプルに front_close を消して front_mid のみにして「nær fram (1-2)」 → 失敗 (距離 3)
+	var ctx_no_close := SpatialContext.new()
+	ctx_no_close.player_pos = Vector2i(10, 10)
+	ctx_no_close.player_facing = 0
+	ctx_no_close.map_size = Vector2i(30, 25)
+	for vy2 in range(0, 25):
+		for vx2 in range(0, 30):
+			ctx_no_close.visible_tiles[Vector2i(vx2, vy2)] = true
+	ctx_no_close.enemies = [
+		{"id": "front_mid", "pos": Vector2i(10, 7), "hp": 10},  # 距離 3, nær (1-2) には届かない
+	]
+	ctx_no_close.wall_lookup = func(_p): return false
+	var ts_t5 = SpatialResolver.resolve(ast_t3, ctx_no_close, rs_inter_35)
+	if ts_t5 != null:
+		r.assert_false(ts_t5.reachable, "SR T5: nær fram で距離 3 の敵には届かない → reachable=false")
+		var found_rr := false
+		for f in ts_t5.core_findings:
+			if String(f.get("rule", "")) == "range_required":
+				found_rr = true
+		r.assert_true(found_rr, "SR T5: core_findings に range_required")
+
+	# T6: vítt fram → AoE 円 (中心 = 自分の 2 タイル北 = (10, 8), 半径 2)
+	# 範囲内の敵 = front_close (10,9)、front_mid (10,7) (距離 1)
+	var ast_t6 := SpellParser.parse(SpellTokenizer.tokenize(
+		[{"word_id": "vitt", "case": ""}, {"word_id": "fram", "case": ""}, {"word_id": "meida", "case": ""}, {"word_id": "fjandi", "case": "acc"}],
+		rs_inter_35,
+		Callable(Lexicon, "get_word")
+	))
+	var ts_t6 = SpatialResolver.resolve(ast_t6, spatial_ctx_t, rs_inter_35)
+	if ts_t6 != null:
+		r.assert_true(ts_t6.reachable, "SR T6: vítt fram → reachable")
+		r.assert_eq(ts_t6.center_pos, Vector2i(10, 8), "SR T6: 中心 = プレイヤー + 北×2 = (10, 8)")
+		# front_close (10,9) は中心からマンハッタン 1、front_mid (10,7) も 1 → どちらも当たる
+		r.assert_true(ts_t6.target_tiles.size() >= 2, "SR T6: AoE で front_close と front_mid を含む")
+
+	# T7: í gegnum fram → 直線貫通（壁無視）
+	# 線上 = (10,9), (10,8), (10,7), (10,6), ..., (10,0)
+	# 敵 = front_close (10,9), front_mid (10,7), front_far (10,3) → 全部当たる
+	var ast_t7 := SpellParser.parse(SpellTokenizer.tokenize(
+		[{"word_id": "i_gegnum", "case": ""}, {"word_id": "fram", "case": ""}, {"word_id": "meida", "case": ""}, {"word_id": "fjandi", "case": "acc"}],
+		rs_inter_35,
+		Callable(Lexicon, "get_word")
+	))
+	var ts_t7 = SpatialResolver.resolve(ast_t7, spatial_ctx_t, rs_inter_35)
+	if ts_t7 != null:
+		r.assert_true(ts_t7.reachable, "SR T7: í gegnum fram → reachable")
+		r.assert_eq(ts_t7.target_tiles.size(), 3, "SR T7: 直線上 3 体 (front_close, front_mid, front_far)")
+
+	# ---------------- INC-3.5 / 08 §6 H2 再判定（C6-C8）-----------------------
+	# C6: 距離違反による暴発手応え — fjarri 指定で隣接敵 (front_close) を狙うと range_required
+	if engine_35 != null and rs_inter_35 != null:
+		var tokens_c6: Array = [
+			{"word_id": "fjarri", "case": ""},
+			{"word_id": "fram",   "case": ""},
+			{"word_id": "meida",  "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var ctx_c6 := SpatialContext.new()
+		ctx_c6.player_pos = Vector2i(10, 10)
+		ctx_c6.player_facing = 0
+		ctx_c6.map_size = Vector2i(30, 25)
+		for vy3 in range(0, 25):
+			for vx3 in range(0, 30):
+				ctx_c6.visible_tiles[Vector2i(vx3, vy3)] = true
+		ctx_c6.enemies = [{"id": "front_close", "pos": Vector2i(10, 9), "hp": 10}]
+		ctx_c6.wall_lookup = func(_p): return false
+		var cr_c6: CastResult = engine_35.cast(tokens_c6, rs_inter_35, {
+			"c_override": 50.0, "rng_seed": 1, "spatial_context": ctx_c6,
+		})
+		if cr_c6 != null and cr_c6.grammar_report != null:
+			r.assert_false(cr_c6.grammar_report.overall_pass, "C6: fjarri 指定で隣接敵 → overall_pass=false (range_required)")
+			var c6_has_rr := false
+			for f in cr_c6.grammar_report.failures():
+				if String(f.get("rule", "")) == "range_required":
+					c6_has_rr = true
+			r.assert_true(c6_has_rr, "C6: failures に range_required（SpatialResolver マージ済み）")
+
+		# C7: vítt + fram で複数敵の AoE 撃破フィーリング（target_tiles ≥ 2）
+		var tokens_c7: Array = [
+			{"word_id": "vitt",   "case": ""},
+			{"word_id": "fram",   "case": ""},
+			{"word_id": "meida",  "case": ""},
+			{"word_id": "fjandi", "case": "acc"},
+		]
+		var ctx_c7 := SpatialContext.new()
+		ctx_c7.player_pos = Vector2i(10, 10)
+		ctx_c7.player_facing = 0
+		ctx_c7.map_size = Vector2i(30, 25)
+		for vy4 in range(0, 25):
+			for vx4 in range(0, 30):
+				ctx_c7.visible_tiles[Vector2i(vx4, vy4)] = true
+		ctx_c7.enemies = [
+			{"id": "n1", "pos": Vector2i(10, 8), "hp": 10},  # 中心
+			{"id": "n2", "pos": Vector2i( 9, 8), "hp": 10},  # 西 1
+			{"id": "n3", "pos": Vector2i(11, 8), "hp": 10},  # 東 1
+		]
+		ctx_c7.wall_lookup = func(_p): return false
+		var cr_c7: CastResult = engine_35.cast(tokens_c7, rs_inter_35, {
+			"c_override": 100.0, "rng_seed": 1, "spatial_context": ctx_c7,
+		})
+		if cr_c7 != null and cr_c7.target_set != null:
+			r.assert_true(cr_c7.target_set.target_tiles.size() >= 3, "C7: vítt fram で 3 体に当たる気持ちよさ")
+
+		# C8: í gegnum で壁越しに敵を撃ち抜く手応え（ignores_walls=true）
+		var tokens_c8: Array = [
+			{"word_id": "i_gegnum", "case": ""},
+			{"word_id": "fram",     "case": ""},
+			{"word_id": "meida",    "case": ""},
+			{"word_id": "fjandi",   "case": "acc"},
+		]
+		var ctx_c8 := SpatialContext.new()
+		ctx_c8.player_pos = Vector2i(10, 10)
+		ctx_c8.player_facing = 0
+		ctx_c8.map_size = Vector2i(30, 25)
+		for vy5 in range(0, 25):
+			for vx5 in range(0, 30):
+				ctx_c8.visible_tiles[Vector2i(vx5, vy5)] = true
+		ctx_c8.enemies = [
+			{"id": "wall_beyond", "pos": Vector2i(10, 5), "hp": 10},  # 壁の向こう
+		]
+		# (10, 7) を壁にして、貫通でも当たるか確認
+		ctx_c8.wall_lookup = func(p): return Vector2i(p) == Vector2i(10, 7)
+		var cr_c8: CastResult = engine_35.cast(tokens_c8, rs_inter_35, {
+			"c_override": 100.0, "rng_seed": 1, "spatial_context": ctx_c8,
+		})
+		if cr_c8 != null and cr_c8.target_set != null:
+			r.assert_eq(cr_c8.target_set.target_tiles.size(), 1, "C8: í gegnum で壁越し敵に当たる (ignores_walls)")
+			r.assert_eq(String(cr_c8.target_set.target_enemy_ids[0]), "wall_beyond", "C8: wall_beyond を撃つ")
+
+	# ---------------- INC-3.5 / マップサイズ 30×25 確認 ------------------------
+	# v0.9.5 持ち越し対応: helgrind_*.tres の tile_size が 30×25 に縮小されている
+	var ft1_35: FloorTemplate = load("res://data/floors/helgrind_1.tres") as FloorTemplate
+	var ft2_35: FloorTemplate = load("res://data/floors/helgrind_2.tres") as FloorTemplate
+	var ft3_35: FloorTemplate = load("res://data/floors/helgrind_3.tres") as FloorTemplate
+	r.assert_eq(ft1_35.tile_size, Vector2i(30, 25), "v0.9.5: helgrind_1 tile_size = 30×25")
+	r.assert_eq(ft2_35.tile_size, Vector2i(30, 25), "v0.9.5: helgrind_2 tile_size = 30×25")
+	r.assert_eq(ft3_35.tile_size, Vector2i(30, 25), "v0.9.5: helgrind_3 tile_size = 30×25")
+
+	# ---------------- INC-3.5 / MISFIRE_MULT_BY_RULE 新規 3 ルール -------------
+	r.assert_eq(SpellResolver.MISFIRE_MULT_BY_RULE.get("range_required", 0.0), 2.0, "v0.9.5: range_required ×2.0")
+	r.assert_eq(SpellResolver.MISFIRE_MULT_BY_RULE.get("range_conflict", 0.0), 3.0, "v0.9.5: range_conflict ×3.0")
+	r.assert_eq(SpellResolver.MISFIRE_MULT_BY_RULE.get("direction_required", 0.0), 2.0, "v0.9.5: direction_required ×2.0")
+
+	# ---------------- INC-3.5 / Parser が ranges/directions を出す ------------
+	var ast_pr := SpellParser.parse(SpellTokenizer.tokenize(
+		[{"word_id": "naer", "case": ""}, {"word_id": "fram", "case": ""}, {"word_id": "meida", "case": ""}, {"word_id": "fjandi", "case": "acc"}],
+		rs_inter_35,
+		Callable(Lexicon, "get_word")
+	))
+	r.assert_eq(ast_pr.get("ranges", []).size(), 1, "v0.9.5: Parser ranges=[naer]")
+	r.assert_eq(ast_pr.get("directions", []).size(), 1, "v0.9.5: Parser directions=[fram]")
 
 	r.print_summary()
 

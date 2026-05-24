@@ -132,3 +132,29 @@ msgstr "与格"
 
 msgid "grammar.case.gen"
 msgstr "属格"
+
+# === INC-3.5 v0.9.5 範囲語・方向語のコア違反 (09 §7.3) ===
+
+# range_required: 詠唱が射程外（SpatialResolver が立てる）
+# 引数: 範囲語 ID（例: "naer"）, 距離
+msgid "grammar.range_required.reason"
+msgstr "%s の射程外です（対象まで %d タイル）"
+
+msgid "grammar.range_required.recommended"
+msgstr "射程内に踏み込むか、範囲語を変える"
+
+# range_conflict: 範囲語が複数指定
+# 引数: 範囲語 ID 列（カンマ区切り）
+msgid "grammar.range_conflict.reason"
+msgstr "範囲語が複数指定されています: %s（一の呪文に一の範囲）"
+
+msgid "grammar.range_conflict.recommended"
+msgstr "範囲語をひとつだけ残す（近遠の同時指定は不可）"
+
+# direction_required: 形状系範囲語に方向指定がない
+# 引数: 範囲語 ID（例: "vitt"）
+msgid "grammar.direction_required.reason"
+msgstr "%s（広域・貫通）には方向が必要です"
+
+msgid "grammar.direction_required.recommended"
+msgstr "方向語（fram/aptr/vinstri/hœgri）を加える"

@@ -11,9 +11,18 @@ class_name SpellValidator
 ##        elements: 四大元素の組み合わせ判定（半端=NG, 4全部=混沌, §A.3）。
 ##        modifier(最小): 修飾語あり＋効果語なしを NG（性・数・格一致は INC-5）。
 ##        range/condition_clause/number_agreement は ruleset が enabled でも INC-2 以降。
+##
+## INC-3.5 v0.9.5: ruleset で "range" が enabled のとき、`range_conflict` と
+##        `direction_required` をコア違反として判定（03 §3.3 v0.18 / 09 §7.3）。
+##        `range_required`（射程外）は座標が要るため SpatialResolver 側で finding を生成し、
+##        SpellEngine がパイプラインで grammar_report.findings にマージする。
 
 ## 四大元素の ID 集合（§A.3）。
 const FOUR_ELEMENTS: Array = ["eldr", "vatn", "vindr", "jorth"]
+
+## INC-3.5 v0.9.5: 形状系の範囲 word_id（vítt / í gegnum）。
+##   `direction_required` 判定で「方向語かタイル指定がないとダメ」の対象になる。
+const SHAPE_RANGE_WORDS: Array = ["vitt", "i_gegnum"]
 
 ## AST と Ruleset を受けて GrammarReport を返す。
 ##   ast: SpellParser.parse() の出力
@@ -50,6 +59,17 @@ static func validate(ast: Dictionary, ruleset: Resource) -> GrammarReport:
 		var agreement_findings: Array = _check_modifier_agreement(ast, ruleset)
 		for af in agreement_findings:
 			report.findings.append(af)
+
+	# === INC-3.5 コア: 範囲語・方向語の構造的検査（03 §3.3 v0.18 / 09 §7.3）===
+	# range_required（射程外）は座標を要するため SpatialResolver 側で生成し、
+	# SpellEngine がパイプラインで grammar_report.findings にマージする。
+	if _is_rule_active(ruleset, "range"):
+		var rc_finding := _check_range_conflict(ast, ruleset)
+		if rc_finding.size() > 0:
+			report.findings.append(rc_finding)
+		var dr_finding := _check_direction_required(ast, ruleset)
+		if dr_finding.size() > 0:
+			report.findings.append(dr_finding)
 
 	# 全体 pass/fail と G スコア計算。
 	report.overall_pass = report.failures().size() == 0
@@ -256,6 +276,63 @@ static func _check_modifier(ast: Dictionary, ruleset: Resource) -> Dictionary:
 	)
 
 
+## range_conflict（INC-3.5 v0.9.5 新規、03 §3.3 v0.18 / 09 §7.3）:
+##   範囲語が複数指定されていれば矛盾。特に nær (近) + fjarri (遠) は明示的に NG。
+##   形状系 (vítt / í gegnum) と距離系 (nær / fjarri) の混在も矛盾扱い（一の呪文に一の範囲）。
+##   返り値: fail finding or 空辞書（pass）。
+static func _check_range_conflict(ast: Dictionary, ruleset: Resource) -> Dictionary:
+	var ranges: Array = ast.get("ranges", [])
+	if ranges.size() <= 1:
+		return {}  # 0 or 1 個なら矛盾なし
+	# 複数指定 → 矛盾
+	var ids: PackedStringArray = PackedStringArray()
+	for r in ranges:
+		var res: WordResource = r.get("resource", null)
+		ids.append(res.id if res != null else String(r.get("word_id", "?")))
+	return _build_finding(
+		"range_conflict",
+		false,
+		_get_rule_severity(ruleset, "range_conflict", "moderate"),
+		_t("grammar.range_conflict.reason") % ", ".join(ids),
+		_t("grammar.range_conflict.recommended")
+	)
+
+
+## direction_required（INC-3.5 v0.9.5 新規、03 §3.3 v0.18 / 09 §7.3）:
+##   形状系の範囲語 (vítt / í gegnum) は中心方向の指定が必須。
+##   方向語 (fram/aptr/vinstri/hœgri) が呪文に無ければ NG。
+##   タイル直接指定は呪文側からは見えないため、呪文 AST に方向語が無ければ fail を立て、
+##   呼び側（UI）が「タイル指定があるならこの finding を抑制する」運用にする想定。
+##   INC-3.5 では呪文タイル指定 UI を実装しないため、本判定は方向語のみで OK。
+##   返り値: fail finding or 空辞書（pass）。
+static func _check_direction_required(ast: Dictionary, ruleset: Resource) -> Dictionary:
+	var ranges: Array = ast.get("ranges", [])
+	if ranges.is_empty():
+		return {}  # 範囲語なし → 暗黙隣接、direction 不要（最隣接敵自動）
+	var has_shape: bool = false
+	var shape_id: String = ""
+	for r in ranges:
+		var res: WordResource = r.get("resource", null)
+		var rid: String = res.id if res != null else String(r.get("word_id", ""))
+		if rid in SHAPE_RANGE_WORDS:
+			has_shape = true
+			shape_id = rid
+			break
+	if not has_shape:
+		return {}  # 形状系がなければ direction 不要（距離系は最隣接扇 fallback）
+	# 形状系あり → directions が空なら NG
+	var directions: Array = ast.get("directions", [])
+	if directions.size() > 0:
+		return {}
+	return _build_finding(
+		"direction_required",
+		false,
+		_get_rule_severity(ruleset, "direction_required", "moderate"),
+		_t("grammar.direction_required.reason") % shape_id,
+		_t("grammar.direction_required.recommended")
+	)
+
+
 ## word_order（v0.15 アイスランド語準拠）: 正準 `[属性] 効果語 [修飾] 対象語` からの逸脱を検査。
 ## 判定:
 ##   (a) effect が target より前にあるか（VO 命令文）
@@ -330,24 +407,41 @@ static func _show_token_role_jp(role: String) -> String:
 
 # --- スコアリング ---
 
+## INC-3.5 v0.9.5: SpellEngine がパイプライン途中で SpatialResolver の core_findings を
+## merge した後、G スコアと overall_pass を再計算するための公開ヘルパ。
+static func recompute_after_merge(report: GrammarReport, ruleset: Resource) -> void:
+	if report == null:
+		return
+	report.overall_pass = report.failures().size() == 0
+	report.g_score = _compute_g_score(report, ruleset)
+
+
 ## G スコア（0..1）。03 §5.4「GrammarReport の pass 比率＋語順ボーナス補正」。
 ## INC-1 暫定モデル:
 ##   G = (active コア規則のうち pass した数) / (active コア規則の総数)
 ##   コア規則ゼロなら G=1.0（判定不能 = ペナルティなし）
 ## severity_weights はフィードバック強調用に温存し、G への寄与は INC-2 のチューニングで再検討。
 ## ※暴発確率には不関与（T5、§5.2）。
+##
+## INC-3.5 v0.9.5: ruleset で "range" 解禁時のみ range_conflict / direction_required /
+##   range_required（SpatialResolver マージ）を G の分母に加算する。
 static func _compute_g_score(report: GrammarReport, ruleset: Resource) -> float:
 	var core_rules: PackedStringArray = PackedStringArray(["case_agreement", "word_order"])
-	var active: int = 0
-	for rule_name in core_rules:
-		if _is_rule_active(ruleset, rule_name):
-			active += 1
+	# INC-3.5: range が解禁されていれば、その下位 3 ルールも core 扱い。
+	if _is_rule_active(ruleset, "range"):
+		core_rules.append("range_conflict")
+		core_rules.append("direction_required")
+		core_rules.append("range_required")
+	var active: int = core_rules.size()
 	if active == 0:
 		return 1.0
 
 	var failed_core: int = 0
+	var seen_failed: Dictionary = {}
 	for f in report.failures():
-		if String(f.get("rule", "")) in core_rules:
+		var rname: String = String(f.get("rule", ""))
+		if rname in core_rules and not seen_failed.has(rname):
+			seen_failed[rname] = true
 			failed_core += 1
 
 	var passed: int = max(0, active - failed_core)

@@ -122,3 +122,26 @@ msgstr "dative"
 
 msgid "grammar.case.gen"
 msgstr "genitive"
+
+# === INC-3.5 v0.9.5: range / direction core violations (09 §7.3) ===
+
+# range_required: cast out of range (raised by SpatialResolver)
+msgid "grammar.range_required.reason"
+msgstr "%s is out of range (target %d tiles away)"
+
+msgid "grammar.range_required.recommended"
+msgstr "Move closer or change range word"
+
+# range_conflict: multiple range words
+msgid "grammar.range_conflict.reason"
+msgstr "Multiple range words: %s (only one allowed per spell)"
+
+msgid "grammar.range_conflict.recommended"
+msgstr "Keep only one range word (no simultaneous near/far)"
+
+# direction_required: shape range word without direction
+msgid "grammar.direction_required.reason"
+msgstr "%s (area/piercing) requires a direction"
+
+msgid "grammar.direction_required.recommended"
+msgstr "Add a direction word (fram/aptr/vinstri/hœgri)"

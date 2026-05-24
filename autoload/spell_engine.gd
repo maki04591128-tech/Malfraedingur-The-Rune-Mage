@@ -45,6 +45,13 @@ func cast(tokens_in: Array, ruleset: Resource, options: Dictionary = {}) -> Cast
 	var spatial_context = options.get("spatial_context", null)
 	var target_set: TargetSet = SpatialResolver.resolve(ast, spatial_context, ruleset)
 
+	# INC-3.5 v0.9.5: SpatialResolver の core_findings を grammar_report.findings にマージし、
+	# overall_pass / g_score を再計算（range_required は座標が要るのでここで合流）。
+	if target_set != null and grammar_report != null and target_set.core_findings.size() > 0:
+		for f in target_set.core_findings:
+			grammar_report.findings.append(f)
+		SpellValidator.recompute_after_merge(grammar_report, ruleset)
+
 	# C: options.c_override > 使用語の comprehension 加重平均（Lexicon 経由）
 	var c_weighted: float = 0.0
 	if options.has("c_override"):

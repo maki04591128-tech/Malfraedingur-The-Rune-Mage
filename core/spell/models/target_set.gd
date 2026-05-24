@@ -25,6 +25,11 @@ class_name TargetSet
 ##   例: { "range_required": "射程外", "direction_required": "方向未指定" }
 @export var advisory_findings: Dictionary = {}
 
+## INC-3.5 v0.9.5 新規: コア違反扱いの finding。SpellEngine が grammar_report.findings に
+## マージし、overall_pass / g_score / 暴発倍率に乗せる。各要素は Validator._build_finding() と
+## 同じ辞書形式（rule / pass / severity / reason / recommended）。
+@export var core_findings: Array = []
+
 
 ## 何も対象がない（射程外・視界に敵なし）か。
 func is_empty() -> bool:
