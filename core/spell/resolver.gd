@@ -26,6 +26,9 @@ static var MISFIRE_MULT_BY_RULE: Dictionary = {
 	"range_required":      2.0,   # 射程外 — SpatialResolver が finding を立てる
 	"range_conflict":      3.0,   # 範囲語が複数（nær×fjarri など） — Validator が立てる
 	"direction_required":  2.0,   # 形状系範囲語に方向指定なし — Validator が立てる
+	# === INC-5.1 新規（03 §3.3 v0.19）===
+	"number_agreement":    1.5,   # 修飾語と target の数（単複）不一致（minor）
+	"mood_required":       1.5,   # 効果語が命令法でない（minor、03 §3.2 命令文 V-initial）
 }
 
 ## tier 別の variance 上限（暫定値・INC-2 で BalanceConfig 化、v0.17 でチューニング可能化）。

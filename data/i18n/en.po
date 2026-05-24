@@ -145,3 +145,46 @@ msgstr "%s (area/piercing) requires a direction"
 
 msgid "grammar.direction_required.recommended"
 msgstr "Add a direction word (fram/aptr/vinstri/hœgri)"
+
+# === INC-5.1 language-supervision scaffolds (freetext + number + mood) ===
+
+# unknown_word: freetext form not found in dictionary
+msgid "grammar.unknown_word.reason"
+msgstr "\"%s\" is not in the dictionary (misfire ×4)"
+
+msgid "grammar.unknown_word.recommended"
+msgstr "Check spelling, or watch inflection (fjanda is accusative, fjandi is nominative)"
+
+# number_agreement: modifier vs target number mismatch
+msgid "grammar.number_agreement.reason"
+msgstr "%s (%s) must agree in number with target %s (%s)"
+
+msgid "grammar.number_agreement.recommended"
+msgstr "Match singular/plural"
+
+# mood_required: effect verb not in imperative
+msgid "grammar.mood_required.reason"
+msgstr "%s is not imperative (currently: %s; chant as a command)"
+
+msgid "grammar.mood_required.recommended"
+msgstr "Use imperative 2sg (e.g., meið) or 2pl (e.g., meiðið)"
+
+# === Number labels ===
+msgid "grammar.number.sg"
+msgstr "singular"
+
+msgid "grammar.number.pl"
+msgstr "plural"
+
+# === Verb mood labels ===
+msgid "grammar.mood.inf"
+msgstr "infinitive"
+
+msgid "grammar.mood.imp_2sg"
+msgstr "imperative 2sg"
+
+msgid "grammar.mood.imp_2pl"
+msgstr "imperative 2pl"
+
+msgid "grammar.mood.ind_3sg"
+msgstr "indicative 3sg"

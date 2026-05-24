@@ -1844,6 +1844,224 @@ func _ready() -> void:
 		lex_inc4.wipe_save()
 		lex_inc4._reset_memory_only_for_test()
 
+	# ============================================================================
+	# INC-5.1: 言語監修足場（古綴正規化 + 屈折マッチャ + 複数形 + 命令法 + unknown_word）
+	# ============================================================================
+	print("--- INC-5.1: 古綴正規化 / 屈折マッチャ / 複数形 / 命令法 / unknown_word ---")
+
+	# ---------------- A: Orthography 正規化 ----------------------------------
+	r.assert_eq(Orthography.normalize("meiða"), "meida", "INC-5.1 A: ð → d (meiða → meida)")
+	r.assert_eq(Orthography.normalize("sjálfr"), "sjalfr", "INC-5.1 A: á → a (sjálfr → sjalfr)")
+	r.assert_eq(Orthography.normalize("hœgri"), "hoegri", "INC-5.1 A: œ → oe (hœgri → hoegri)")
+	r.assert_eq(Orthography.normalize("nær"), "naer", "INC-5.1 A: æ → ae (nær → naer)")
+	r.assert_eq(Orthography.normalize("þurs"), "thurs", "INC-5.1 A: þ → th")
+	r.assert_eq(Orthography.normalize("ǽ"), "ae", "INC-5.1 A: ǽ (long ae) → ae")
+	r.assert_eq(Orthography.normalize("Meiða"), "meida", "INC-5.1 A: 大文字 lower 化")
+	# Idempotent
+	r.assert_eq(Orthography.normalize(Orthography.normalize("meiða")), "meida", "INC-5.1 A: idempotent")
+	# equals ヘルパ
+	r.assert_true(Orthography.equals("meiða", "meida"), "INC-5.1 A: equals(古綴, ASCII)")
+	r.assert_true(Orthography.equals("HŒgri", "hoegri"), "INC-5.1 A: equals 大小+古綴 OK")
+	r.assert_false(Orthography.equals("meida", "fjandi"), "INC-5.1 A: 別語は equals=false")
+
+	# ---------------- B: InflectionMatcher 屈折逆引き ------------------------
+	var lex_inc51 := get_node("/root/Lexicon")
+	if lex_inc51 != null:
+		var wl_inc51: Callable = Callable(lex_inc51, "get_word")
+		var ids_inc51: Array = lex_inc51.get_known_word_ids()
+
+		# id 完全一致 (Pass 1)
+		var hit_nom: Dictionary = InflectionMatcher.match_form("fjandi", wl_inc51, ids_inc51)
+		r.assert_eq(String(hit_nom.get("word_id", "")), "fjandi", "INC-5.1 B: id 完全一致 fjandi")
+		r.assert_eq(String(hit_nom.get("confidence", "")), "exact", "INC-5.1 B: confidence=exact")
+
+		# 屈折形 (Pass 2): fjanda → fjandi + case=acc + number=sg
+		var hit_acc: Dictionary = InflectionMatcher.match_form("fjanda", wl_inc51, ids_inc51)
+		r.assert_eq(String(hit_acc.get("word_id", "")), "fjandi", "INC-5.1 B: fjanda → fjandi")
+		r.assert_eq(String(hit_acc.get("case", "")), "acc", "INC-5.1 B: fjanda → case=acc")
+		r.assert_eq(String(hit_acc.get("number", "")), "sg", "INC-5.1 B: fjanda → number=sg")
+		r.assert_eq(String(hit_acc.get("confidence", "")), "inflected", "INC-5.1 B: confidence=inflected")
+
+		# 複数形 (D との橋渡し): fjándr → fjandi + case=nom + number=pl
+		var hit_pl: Dictionary = InflectionMatcher.match_form("fjándr", wl_inc51, ids_inc51)
+		r.assert_eq(String(hit_pl.get("word_id", "")), "fjandi", "INC-5.1 D: fjándr → fjandi (pl)")
+		r.assert_eq(String(hit_pl.get("number", "")), "pl", "INC-5.1 D: fjándr → number=pl")
+
+		# 古綴経由: meiða → meida (verb_forms.inf)
+		var hit_inf: Dictionary = InflectionMatcher.match_form("meiða", wl_inc51, ids_inc51)
+		r.assert_eq(String(hit_inf.get("word_id", "")), "meida", "INC-5.1 E: meiða → meida (動詞 id 一致 via 正規化)")
+
+		# 命令法 (Pass 2 動詞): meið → meida + mood=imp_2sg
+		var hit_imp: Dictionary = InflectionMatcher.match_form("meið", wl_inc51, ids_inc51)
+		r.assert_eq(String(hit_imp.get("word_id", "")), "meida", "INC-5.1 E: meið → meida")
+		r.assert_eq(String(hit_imp.get("mood", "")), "imp_2sg", "INC-5.1 E: meið → mood=imp_2sg")
+		var hit_impl: Dictionary = InflectionMatcher.match_form("meiðið", wl_inc51, ids_inc51)
+		r.assert_eq(String(hit_impl.get("mood", "")), "imp_2pl", "INC-5.1 E: meiðið → mood=imp_2pl")
+
+		# 形容詞性別解決: mikinn → mikill + case=acc + gender=masculine
+		var hit_adj: Dictionary = InflectionMatcher.match_form("mikinn", wl_inc51, ids_inc51)
+		r.assert_eq(String(hit_adj.get("word_id", "")), "mikill", "INC-5.1 B: mikinn → mikill")
+		r.assert_eq(String(hit_adj.get("case", "")), "acc", "INC-5.1 B: mikinn → case=acc")
+		r.assert_eq(String(hit_adj.get("gender", "")), "masculine", "INC-5.1 B: mikinn → gender=masculine")
+
+		# マッチなし: 完全な造語
+		var hit_none: Dictionary = InflectionMatcher.match_form("zxqwerty", wl_inc51, ids_inc51)
+		r.assert_eq(hit_none.size(), 0, "INC-5.1 B: 未知綴り → 空辞書")
+
+	# ---------------- B 統合: tokenize_freetext に known_word_ids を渡す経路 ---
+	if lex_inc51 != null:
+		var wl_ft: Callable = Callable(lex_inc51, "get_word")
+		var ids_ft: Array = lex_inc51.get_known_word_ids()
+		var ft51: Array = SpellTokenizer.tokenize_freetext("meið fjanda", null, wl_ft, ids_ft)
+		r.assert_eq(ft51.size(), 2, "INC-5.1 B-int: tokenize_freetext 2 トークン")
+		if ft51.size() >= 2:
+			r.assert_eq(String(ft51[0].get("word_id", "")), "meida", "INC-5.1 B-int: 命令法 meið → meida")
+			r.assert_eq(String(ft51[0].get("mood", "")), "imp_2sg", "INC-5.1 B-int: mood=imp_2sg")
+			r.assert_eq(String(ft51[1].get("word_id", "")), "fjandi", "INC-5.1 B-int: fjanda → fjandi")
+			r.assert_eq(String(ft51[1].get("case", "")), "acc", "INC-5.1 B-int: 屈折逆引きで case=acc")
+			r.assert_eq(String(ft51[1].get("number", "")), "sg", "INC-5.1 B-int: number=sg")
+		# 古綴入力もそのまま通る
+		var ft51b: Array = SpellTokenizer.tokenize_freetext("meiða fjándr", null, wl_ft, ids_ft)
+		if ft51b.size() >= 2:
+			r.assert_eq(String(ft51b[0].get("word_id", "")), "meida", "INC-5.1 B-int: 古綴 meiða → meida")
+			r.assert_eq(String(ft51b[1].get("word_id", "")), "fjandi", "INC-5.1 B-int: 古綴 pl fjándr → fjandi")
+			r.assert_eq(String(ft51b[1].get("number", "")), "pl", "INC-5.1 B-int: pl 検出")
+
+	# ---------------- C: 無辞書 unknown_word finding ------------------------
+	if lex_inc51 != null:
+		var wl_uw: Callable = Callable(lex_inc51, "get_word")
+		var ids_uw: Array = lex_inc51.get_known_word_ids()
+		var rs_inter_51: GrammarRuleset = load("res://data/grammar/phase_intermediate.tres") as GrammarRuleset
+		var ft_unknown_51: Array = SpellTokenizer.tokenize_freetext("zxqwerty fjandi", null, wl_uw, ids_uw)
+		r.assert_eq(ft_unknown_51.size(), 2, "INC-5.1 C: tokenize_freetext 2 トークン")
+		var ast_unknown: Dictionary = SpellParser.parse(ft_unknown_51)
+		var rep_unknown: GrammarReport = SpellValidator.validate(ast_unknown, rs_inter_51)
+		var has_uw: bool = false
+		for f in rep_unknown.failures():
+			if String(f.get("rule", "")) == "unknown_word":
+				has_uw = true
+		r.assert_true(has_uw, "INC-5.1 C: 未知綴りで unknown_word finding 発火")
+		r.assert_false(rep_unknown.overall_pass, "INC-5.1 C: unknown_word で overall_pass=false")
+
+		# Resolver: unknown_word 倍率が暴発確率に乗る (C=50, base=0.05 × 4.0 = 0.20)
+		var p_uw: float = SpellResolver.compute_misfire_chance(50.0, rep_unknown)
+		r.assert_true(p_uw >= 0.20, "INC-5.1 C: unknown_word で p_misfire >= 0.20 (×4 倍率発火、got %f)" % p_uw)
+		# 既知綴りのみなら unknown_word は出ない
+		var ft_known_51: Array = SpellTokenizer.tokenize_freetext("meida fjandi:acc", null, wl_uw, ids_uw)
+		var ast_known: Dictionary = SpellParser.parse(ft_known_51)
+		var rep_known: GrammarReport = SpellValidator.validate(ast_known, rs_inter_51)
+		var no_uw: bool = true
+		for f2 in rep_known.findings:
+			if String(f2.get("rule", "")) == "unknown_word":
+				no_uw = false
+		r.assert_true(no_uw, "INC-5.1 C: 既知綴り全部なら unknown_word は出ない")
+
+	# ---------------- D: 複数形 number_agreement minor finding ---------------
+	if lex_inc51 != null:
+		var rs_inter_d: GrammarRuleset = load("res://data/grammar/phase_intermediate.tres") as GrammarRuleset
+		# fjandi.tres に pl が追加された確認
+		var fjandi_pl: WordResource = load("res://data/words/fjandi.tres") as WordResource
+		r.assert_true(fjandi_pl.inflection.has("pl"), "INC-5.1 D: fjandi.inflection.pl 追加済み")
+		r.assert_eq(fjandi_pl.get_inflected("pl", "nom"), "fjándr", "INC-5.1 D: fjandi pl.nom = fjándr")
+		r.assert_eq(fjandi_pl.get_inflected("pl", "dat"), "fjándum", "INC-5.1 D: fjandi pl.dat = fjándum")
+		# eldr/vatn/vindr/jorth も pl 追加されているか
+		var eldr_pl: WordResource = load("res://data/words/eldr.tres") as WordResource
+		r.assert_true(eldr_pl.inflection.has("pl"), "INC-5.1 D: eldr.inflection.pl 追加済み")
+		r.assert_eq(eldr_pl.get_inflected("pl", "nom"), "eldar", "INC-5.1 D: eldr pl.nom = eldar")
+
+		# number_agreement 発火: 修飾語 sg (mikinn=acc/sg/m) + target pl (fjándr=nom/pl)
+		# (本来 mikinn を強引に pl と組み合わせるが、ここはあくまで minor finding の発火確認)
+		# 手動でトークン構築（freetext 経由でも組めるが直接の方が意図明瞭）
+		var tok_mod_sg: Dictionary = {
+			"word_id": "mikill", "case": "acc", "number": "sg", "gender": "masculine",
+			"mood": "", "resource": load("res://data/words/mikill.tres"),
+			"matched_form": "mikinn",
+		}
+		var tok_target_pl: Dictionary = {
+			"word_id": "fjandi", "case": "acc", "number": "pl", "gender": "masculine",
+			"mood": "", "resource": fjandi_pl, "matched_form": "fjándr",
+		}
+		var tok_effect_imp: Dictionary = {
+			"word_id": "meida", "case": "", "number": "", "gender": "",
+			"mood": "imp_2sg", "resource": load("res://data/words/meida.tres"),
+			"matched_form": "meið",
+		}
+		var ast_num: Dictionary = SpellParser.parse([tok_effect_imp, tok_mod_sg, tok_target_pl])
+		var rep_num: GrammarReport = SpellValidator.validate(ast_num, rs_inter_d)
+		var has_na: bool = false
+		for f3 in rep_num.failures():
+			if String(f3.get("rule", "")) == "number_agreement":
+				has_na = true
+		r.assert_true(has_na, "INC-5.1 D: 修飾語 sg + target pl で number_agreement finding")
+
+		# number 一致なら number_agreement は出ない
+		var tok_target_sg: Dictionary = {
+			"word_id": "fjandi", "case": "acc", "number": "sg", "gender": "masculine",
+			"mood": "", "resource": fjandi_pl, "matched_form": "fjanda",
+		}
+		var ast_num2: Dictionary = SpellParser.parse([tok_effect_imp, tok_mod_sg, tok_target_sg])
+		var rep_num2: GrammarReport = SpellValidator.validate(ast_num2, rs_inter_d)
+		var no_na: bool = true
+		for f4 in rep_num2.findings:
+			if String(f4.get("rule", "")) == "number_agreement":
+				no_na = false
+		r.assert_true(no_na, "INC-5.1 D: 数一致なら number_agreement は出ない")
+
+	# ---------------- E: 命令法 mood_required minor finding ------------------
+	if lex_inc51 != null:
+		var rs_inter_e: GrammarRuleset = load("res://data/grammar/phase_intermediate.tres") as GrammarRuleset
+		var meida_e: WordResource = load("res://data/words/meida.tres") as WordResource
+		r.assert_true(meida_e.verb_forms.size() > 0, "INC-5.1 E: meida.verb_forms 投入済み")
+		r.assert_eq(String(meida_e.verb_forms.get("imp_2sg", "")), "meið", "INC-5.1 E: imp_2sg = meið")
+
+		# 効果語 mood=inf (不定法) → mood_required finding
+		var tok_eff_inf: Dictionary = {
+			"word_id": "meida", "case": "", "number": "", "gender": "",
+			"mood": "inf", "resource": meida_e, "matched_form": "meiða",
+		}
+		var tok_tgt_simple: Dictionary = {
+			"word_id": "fjandi", "case": "acc", "number": "sg", "gender": "masculine",
+			"mood": "", "resource": load("res://data/words/fjandi.tres"),
+			"matched_form": "fjanda",
+		}
+		var ast_e1: Dictionary = SpellParser.parse([tok_eff_inf, tok_tgt_simple])
+		var rep_e1: GrammarReport = SpellValidator.validate(ast_e1, rs_inter_e)
+		var has_mr: bool = false
+		for f5 in rep_e1.failures():
+			if String(f5.get("rule", "")) == "mood_required":
+				has_mr = true
+		r.assert_true(has_mr, "INC-5.1 E: mood=inf で mood_required finding")
+
+		# 効果語 mood=imp_2sg → 出ない
+		var tok_eff_imp2: Dictionary = {
+			"word_id": "meida", "case": "", "number": "", "gender": "",
+			"mood": "imp_2sg", "resource": meida_e, "matched_form": "meið",
+		}
+		var ast_e2: Dictionary = SpellParser.parse([tok_eff_imp2, tok_tgt_simple])
+		var rep_e2: GrammarReport = SpellValidator.validate(ast_e2, rs_inter_e)
+		var no_mr: bool = true
+		for f6 in rep_e2.findings:
+			if String(f6.get("rule", "")) == "mood_required":
+				no_mr = false
+		r.assert_true(no_mr, "INC-5.1 E: mood=imp_2sg なら mood_required は出ない")
+
+		# 効果語 mood="" (タイル経路、mood 情報なし) → 出ない (誤発火防止)
+		var tok_eff_empty: Dictionary = {
+			"word_id": "meida", "case": "", "number": "", "gender": "",
+			"mood": "", "resource": meida_e, "matched_form": "meida",
+		}
+		var ast_e3: Dictionary = SpellParser.parse([tok_eff_empty, tok_tgt_simple])
+		var rep_e3: GrammarReport = SpellValidator.validate(ast_e3, rs_inter_e)
+		var no_mr2: bool = true
+		for f7 in rep_e3.findings:
+			if String(f7.get("rule", "")) == "mood_required":
+				no_mr2 = false
+		r.assert_true(no_mr2, "INC-5.1 E: mood='' (タイル経路) では mood_required は出ない")
+
+	# ---------------- MISFIRE_MULT_BY_RULE 新規 2 ルール ---------------------
+	r.assert_eq(SpellResolver.MISFIRE_MULT_BY_RULE.get("number_agreement", 0.0), 1.5, "INC-5.1: number_agreement ×1.5")
+	r.assert_eq(SpellResolver.MISFIRE_MULT_BY_RULE.get("mood_required", 0.0), 1.5, "INC-5.1: mood_required ×1.5")
+
 	r.print_summary()
 
 	# 自動終了（CLI からの実行も想定）。エディタで F5 した場合は手動で閉じる。

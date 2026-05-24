@@ -31,6 +31,25 @@ static func validate(ast: Dictionary, ruleset: Resource) -> GrammarReport:
 	var report := GrammarReport.new()
 	report.findings = []
 
+	# === INC-5.1 C: 無辞書経路の未知語検出（ruleset 不関与・常時 ON） ===
+	# 任意の word_class でトークンに resource=null があれば unknown_word finding を立てる。
+	# Resolver の MISFIRE_MULT_BY_RULE["unknown_word"]=4.0 が発火する。
+	var uw_findings: Array = _check_unknown_words(ast)
+	for uf in uw_findings:
+		report.findings.append(uf)
+
+	# === INC-5.1 D: 数一致（minor、ruleset 不関与） ===
+	# 修飾語と target の number が不一致なら minor finding。
+	var num_findings: Array = _check_number_agreement(ast)
+	for nf in num_findings:
+		report.findings.append(nf)
+
+	# === INC-5.1 E: 命令法判定（minor、ruleset 不関与） ===
+	# 効果語の mood が "imperative" 系でないなら minor finding（命令文 V-initial、03 §3.2）。
+	var mood_finding: Dictionary = _check_mood_required(ast)
+	if mood_finding.size() > 0:
+		report.findings.append(mood_finding)
+
 	# === コア規則: 格一致 ===
 	# 効果語の governs_case が "acc"/"dat"/"gen" のとき、対象語の case が一致するかを検査。
 	if _is_rule_active(ruleset, "case_agreement"):
@@ -390,9 +409,106 @@ static func _check_word_order(ast: Dictionary, ruleset: Resource) -> Array:
 	return findings
 
 
+## INC-5.1 C: 無辞書経路の未知語検出。
+##   AST.tokens 内で resource=null の語を全て unknown_word finding として返す。
+##   ruleset 不関与（常時 ON）。タイル経路では resource は必ず埋まるため findings は出ない。
+##   Resolver の MISFIRE_MULT_BY_RULE["unknown_word"]=4.0 が発火する。
+## 返り値: finding 辞書の配列（空なら未知語ゼロ）。
+static func _check_unknown_words(ast: Dictionary) -> Array:
+	var findings: Array = []
+	var tokens: Array = ast.get("tokens", [])
+	for tok in tokens:
+		var res = tok.get("resource", null)
+		if res != null:
+			continue
+		var raw_form: String = String(tok.get("matched_form", tok.get("word_id", "?")))
+		findings.append(_build_finding(
+			"unknown_word",
+			false,
+			"moderate",
+			_t("grammar.unknown_word.reason") % raw_form,
+			_t("grammar.unknown_word.recommended")
+		))
+	return findings
+
+
+## INC-5.1 D: 数一致（number_agreement、minor）。
+##   修飾語が複数あれば各々判定。target.number と一致しなければ finding。
+##   number 情報がない側（"") はスキップ（不明扱い）。
+##   ruleset 不関与（常時 ON）。
+## 返り値: finding 辞書の配列。
+static func _check_number_agreement(ast: Dictionary) -> Array:
+	var findings: Array = []
+	var target = ast.get("target", null)
+	if target == null:
+		return findings
+	var target_number: String = String(target.get("number", ""))
+	if target_number.is_empty():
+		return findings
+	var modifiers: Array = ast.get("modifiers", [])
+	for mod in modifiers:
+		var mod_number: String = String(mod.get("number", ""))
+		if mod_number.is_empty():
+			continue
+		if mod_number == target_number:
+			continue
+		var mod_form: String = String(mod.get("matched_form", mod.get("word_id", "?")))
+		var target_form: String = String(target.get("matched_form", target.get("word_id", "?")))
+		findings.append(_build_finding(
+			"number_agreement",
+			false,
+			"minor",
+			_t("grammar.number_agreement.reason") % [mod_form, _number_label(mod_number), target_form, _number_label(target_number)],
+			_t("grammar.number_agreement.recommended")
+		))
+	return findings
+
+
+## INC-5.1 E: 命令法判定（mood_required、minor）。
+##   効果語の mood が "imp_2sg" / "imp_2pl" 以外なら finding。
+##   mood が空文字（指定なし）の場合はスキップ（タイル経路・mood 情報未取得経路を巻き込まない）。
+##   ruleset 不関与（常時 ON）。
+## 返り値: finding 辞書、未該当なら空辞書。
+static func _check_mood_required(ast: Dictionary) -> Dictionary:
+	var effect = ast.get("effect", null)
+	if effect == null:
+		return {}
+	var mood: String = String(effect.get("mood", ""))
+	if mood.is_empty():
+		return {}
+	if mood in ["imp_2sg", "imp_2pl"]:
+		return {}
+	var effect_form: String = String(effect.get("matched_form", effect.get("word_id", "?")))
+	return _build_finding(
+		"mood_required",
+		false,
+		"minor",
+		_t("grammar.mood_required.reason") % [effect_form, _mood_label(mood)],
+		_t("grammar.mood_required.recommended")
+	)
+
+
 ## v0.17: static 文脈から翻訳を引くヘルパー（Object.tr() は static 不可のため TranslationServer 経由）。
 static func _t(key: String) -> String:
 	return TranslationServer.translate(key)
+
+
+## INC-5.1: number ID → ロケール別ラベル。
+static func _number_label(number: String) -> String:
+	match number:
+		"sg": return _t("grammar.number.sg")
+		"pl": return _t("grammar.number.pl")
+		_: return number
+
+
+## INC-5.1: 動詞 mood ID → ロケール別ラベル。
+static func _mood_label(mood: String) -> String:
+	match mood:
+		"inf":     return _t("grammar.mood.inf")
+		"imp_2sg": return _t("grammar.mood.imp_2sg")
+		"imp_2pl": return _t("grammar.mood.imp_2pl")
+		"ind_3sg": return _t("grammar.mood.ind_3sg")
+		_: return mood
 
 
 ## 役割名の日本語表示（推奨修正用、補助）。

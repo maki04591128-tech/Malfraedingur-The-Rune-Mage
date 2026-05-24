@@ -21,6 +21,12 @@ inflection = {
 "dat": "vatni",
 "gen": "vatns",
 "nom": "vatn"
+},
+"pl": {
+"acc": "vötn",
+"dat": "vötnum",
+"gen": "vatna",
+"nom": "vötn"
 }
 }
 governs_case = ""

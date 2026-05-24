@@ -50,6 +50,13 @@ class_name WordResource
 ## 効果語のみ: 要求する目的語の格。"acc" / "dat" / "gen" / "none" / "" のいずれか。
 @export var governs_case: String = ""
 
+## 動詞活用表（word_class=effect のみ・INC-5.1 新規）。
+##   形式: { "inf": "meiða", "imp_2sg": "meið", "imp_2pl": "meiðið", "ind_3sg": "meiðir" }
+##   - InflectionMatcher が屈折マッチで mood を解決する際に走査する。
+##   - 03 §3.2「命令文 V-initial」/ §3.3 v0.19「mood_required」の判定根拠。
+##   - INC-5.1 では足場（minor finding 用）。INC-5.2 以降で全動詞精緻化＋強弱変化クラス分類。
+@export var verb_forms: Dictionary = {}
+
 ## 条件語/接続等のみ: 構文上の役割（例: "if"）。
 @export var function_role: String = ""
 

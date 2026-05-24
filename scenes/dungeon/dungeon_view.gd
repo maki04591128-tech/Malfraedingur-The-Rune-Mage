@@ -978,18 +978,23 @@ func _on_freetext_submit() -> void:
 	var ruleset_path: String = "res://data/grammar/phase_advanced.tres" if Lexicon.freetext_mode else "res://data/grammar/phase_intermediate.tres"
 	var ruleset: Resource = load(ruleset_path)
 	var word_lookup: Callable = Callable(Lexicon, "get_word") if Lexicon.has_method("get_word") else Callable()
-	var tokens_in: Array = SpellTokenizer.tokenize_freetext(raw, ruleset, word_lookup)
+	# INC-5.1 B: known_word_ids を渡して屈折マッチャを稼働させる（fjanda → fjandi+acc 等）。
+	var tokens_in: Array = SpellTokenizer.tokenize_freetext(raw, ruleset, word_lookup, Lexicon.get_known_word_ids())
 	if tokens_in.is_empty():
 		_log("[color=#888]🔠 無辞書: 入力が空でした[/color]")
 		_close_freetext_modal()
 		return
-	# tokenize_freetext は既に resource を埋めるので、SpellEngine.cast の Tokenizer 再走を踏まないよう
-	# {word_id, case} だけ取り出して通常 cast に渡す（Tokenizer.tokenize がもう一度 lookup する）。
+	# INC-5.1: number/gender/mood/matched_form も SpellEngine.cast に引き継ぐ
+	# （SpellEngine 内の Tokenizer.tokenize は entry.get("number") 等を保持する）。
 	var clean_inputs: Array = []
 	for t in tokens_in:
 		clean_inputs.append({
 			"word_id": String(t.get("word_id", "")),
 			"case": String(t.get("case", "")),
+			"number": String(t.get("number", "")),
+			"gender": String(t.get("gender", "")),
+			"mood": String(t.get("mood", "")),
+			"matched_form": String(t.get("matched_form", t.get("word_id", ""))),
 		})
 	var spatial_ctx = SPATIAL_CONTEXT.from_map_state(MapState)
 	var result: CastResult = SpellEngine.cast(clean_inputs, ruleset, {

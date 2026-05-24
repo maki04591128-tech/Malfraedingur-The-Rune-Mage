@@ -158,3 +158,49 @@ msgstr "%s（広域・貫通）には方向が必要です"
 
 msgid "grammar.direction_required.recommended"
 msgstr "方向語（fram/aptr/vinstri/hœgri）を加える"
+
+# === INC-5.1 言語監修足場（無辞書経路 + 数一致 + 命令法）===
+
+# unknown_word: 無辞書経路で辞書に該当しない綴り
+# 引数: ユーザー入力綴り
+msgid "grammar.unknown_word.reason"
+msgstr "「%s」は辞書にありません（暴発 ×4）"
+
+msgid "grammar.unknown_word.recommended"
+msgstr "綴りを確認、または屈折形に注意（fjanda は対格、fjandi が主格）"
+
+# number_agreement: 修飾語と target の数（単複）不一致
+# 引数: 修飾語表層形, 修飾語の数, 対象語表層形, 対象語の数
+msgid "grammar.number_agreement.reason"
+msgstr "%s（%s）は対象 %s（%s）と数を一致させてください"
+
+msgid "grammar.number_agreement.recommended"
+msgstr "単数・複数を揃える"
+
+# mood_required: 効果語が命令法でない（命令文 V-initial、03 §3.2）
+# 引数: 効果語表層形, 現在の mood ラベル
+msgid "grammar.mood_required.reason"
+msgstr "%s は命令法ではありません（現在: %s／命令文として詠唱）"
+
+msgid "grammar.mood_required.recommended"
+msgstr "命令法 2sg（例: meið）または 2pl（例: meiðið）を使う"
+
+# === 数 (single/plural) ラベル ===
+msgid "grammar.number.sg"
+msgstr "単数"
+
+msgid "grammar.number.pl"
+msgstr "複数"
+
+# === 動詞 mood ラベル ===
+msgid "grammar.mood.inf"
+msgstr "不定法"
+
+msgid "grammar.mood.imp_2sg"
+msgstr "命令法2人称単数"
+
+msgid "grammar.mood.imp_2pl"
+msgstr "命令法2人称複数"
+
+msgid "grammar.mood.ind_3sg"
+msgstr "直説法3人称単数"

@@ -21,6 +21,12 @@ inflection = {
 "dat": "jörðu",
 "gen": "jarðar",
 "nom": "jörð"
+},
+"pl": {
+"acc": "jarðir",
+"dat": "jörðum",
+"gen": "jarða",
+"nom": "jarðir"
 }
 }
 governs_case = ""

@@ -16,6 +16,12 @@ gender = ""
 tier = 1
 comprehension_default = 0
 inflection = {}
+verb_forms = {
+"inf": "meiða",
+"imp_2sg": "meið",
+"imp_2pl": "meiðið",
+"ind_3sg": "meiðir"
+}
 governs_case = "acc"
 function_role = ""
 discovery = PackedStringArray("inscription", "drop")
