@@ -1182,6 +1182,36 @@ func _ready() -> void:
 		# cleanup
 		lex_slot.set_spell_slot(2, [])
 
+	# ============================================================================
+	# INC-3 v0.9.3: 要求 5-8 (別ウィンドウ / 全キー長押し / 斜め移動 / 視界外壁黒)
+	# ============================================================================
+	print("--- INC-3 v0.9.3: 要求 5-8 検証 ---")
+
+	# INC-3.19 (要求 7): MapState.move_player が dx/dy 任意整数で動作（斜め移動）
+	if ms != null and ft1 != null:
+		ms.load_floor(ft1, DSEED.new(9301, 0, 1))
+		# player_start_pos は通常起点部屋の中央付近。周囲が床になっているはずの位置に強制配置
+		# 起点部屋を再確認: ms.map_data.player_start_pos は何かしらある
+		var start = ms.map_data.player_start_pos
+		# 起点部屋の中央なら周囲 8 方向が床のはず
+		ms.player_pos = start
+		# 斜め (北東) 移動を試す
+		var diag_target = start + Vector2i(1, -1)
+		# 床なら成功するはず（起点部屋内）
+		if ms.map_data.is_passable(diag_target):
+			var moved_ne = ms.move_player(1, -1)
+			r.assert_true(moved_ne, "v0.9.3: 斜め (1, -1) 移動成功")
+			r.assert_eq(ms.player_pos, diag_target, "v0.9.3: 斜め移動後 player_pos 一致")
+		# 斜め (南西) 移動を試す（戻る）
+		var diag_target2 = ms.player_pos + Vector2i(-1, 1)
+		if ms.map_data.is_passable(diag_target2):
+			var moved_sw = ms.move_player(-1, 1)
+			r.assert_true(moved_sw, "v0.9.3: 斜め (-1, 1) 移動成功")
+		# 壁方向 (起点 (2,2) 付近で北西 = マップ範囲外) は失敗
+		ms.player_pos = Vector2i(0, 0)
+		var moved_oob = ms.move_player(-1, -1)
+		r.assert_false(moved_oob, "v0.9.3: 範囲外への斜め移動は失敗")
+
 	# Cleanup
 	if ms != null:
 		ms.reset()

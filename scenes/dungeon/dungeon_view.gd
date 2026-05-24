@@ -51,12 +51,16 @@ var log_lines: PackedStringArray = PackedStringArray()
 const LOG_MAX_LINES := 6
 
 # INC-3 v0.9.2: モーダル UI 状態（旧 spell_input_active は要求 3 の 1 ステップ詠唱化で廃止）
-var spell_builder_modal: Node = null   ## F キーで開く spell_builder のインスタンス
+# v0.9.3 (要求 5): Window ノードに変更し、別 OS ウィンドウとして表示
+var spell_builder_window: Window = null   ## F キーで開く spell_builder の別ウィンドウ
 
 # INC-3 v0.9.2 (要求 1): 移動キー長押しのリピート制御。
 # OS のキーリピート echo は Godot 4 で安定しないため、_process で polling する方式に変更。
-const MOVE_REPEAT_DELAY := 0.12  ## 秒。連続移動の間隔（小さくするほど速い）
+# v0.9.3 (要求 6/7): Space/1-5/Q/E も polling、WASD 同時押しで斜め移動
+const MOVE_REPEAT_DELAY := 0.12   ## 秒。連続移動の間隔
+const ACTION_REPEAT_DELAY := 0.30  ## 秒。詠唱・旋回・待機の連続発動間隔（移動より長く誤連打防止）
 var _move_cooldown: float = 0.0
+var _action_cooldown: float = 0.0
 
 
 func _ready() -> void:
@@ -143,39 +147,68 @@ func _load_floor_for(depth: int) -> void:
 
 # --- 入力 ---
 
-## INC-3 v0.9.2 (要求 4): spell_builder モーダル表示中の ESC / F 捕捉（_input は最優先）。
-## CanvasLayer 上の spell_builder が _unhandled_key_input を消費するため、こちらで先取り。
-func _input(event: InputEvent) -> void:
-	if spell_builder_modal == null:
-		return
-	if not (event is InputEventKey) or not event.pressed or event.echo:
-		return
-	if event.keycode == KEY_ESCAPE or event.keycode == KEY_F:
-		_close_spell_builder_modal()
-		get_viewport().set_input_as_handled()
+## INC-3 v0.9.3 (要求 5): spell_builder Window 表示中はキー入力を window 側で消化させる。
+## ESC は window 自身の close_requested で閉じるため、ここでは特別な捕捉不要。
+func _input(_event: InputEvent) -> void:
+	pass
 
 
 ## INC-3 v0.9.2 (要求 1): _process で移動キー押下を polling し、連続移動を実現。
-## _unhandled_key_input の echo より確実（OS リピート設定に依存しない）。
+## v0.9.3 拡張:
+##   - 要求 6: Space/1-5/Q/E も polling、 ACTION_REPEAT_DELAY で連続発動
+##   - 要求 7: WASD 上下と左右を独立判定 → 同時押しで斜め移動 (8 方向)
 func _process(delta: float) -> void:
-	if game_over or spell_builder_modal != null:
+	if game_over or spell_builder_window != null:
 		return
 	_move_cooldown = max(0.0, _move_cooldown - delta)
-	if _move_cooldown > 0.0:
-		return
-	var dx: int = 0
-	var dy: int = 0
-	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
-		dy = -1
-	elif Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
-		dy = 1
-	elif Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
-		dx = -1
-	elif Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
-		dx = 1
-	if dx != 0 or dy != 0:
-		_player_action_move(dx, dy)
-		_move_cooldown = MOVE_REPEAT_DELAY
+	_action_cooldown = max(0.0, _action_cooldown - delta)
+
+	# --- 移動 (8 方向化、要求 7) ---
+	if _move_cooldown <= 0.0:
+		var dx: int = 0
+		var dy: int = 0
+		# 上下は独立に取得（同時押しで斜め移動）
+		if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
+			dy = -1
+		elif Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
+			dy = 1
+		if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
+			dx = -1
+		elif Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
+			dx = 1
+		if dx != 0 or dy != 0:
+			_player_action_move(dx, dy)
+			_move_cooldown = MOVE_REPEAT_DELAY
+
+	# --- 非移動アクション (要求 6: 長押し連続) ---
+	if _action_cooldown <= 0.0:
+		# 旋回 Q / E
+		if Input.is_key_pressed(KEY_Q):
+			_player_action_turn(-1)
+			_action_cooldown = ACTION_REPEAT_DELAY
+		elif Input.is_key_pressed(KEY_E):
+			_player_action_turn(1)
+			_action_cooldown = ACTION_REPEAT_DELAY
+		# 待機 + HP+1
+		elif Input.is_key_pressed(KEY_SPACE):
+			_player_action_wait_and_heal()
+			_action_cooldown = ACTION_REPEAT_DELAY
+		# スロット 1-5 詠唱
+		elif Input.is_key_pressed(KEY_1):
+			_cast_slot(1)
+			_action_cooldown = ACTION_REPEAT_DELAY
+		elif Input.is_key_pressed(KEY_2):
+			_cast_slot(2)
+			_action_cooldown = ACTION_REPEAT_DELAY
+		elif Input.is_key_pressed(KEY_3):
+			_cast_slot(3)
+			_action_cooldown = ACTION_REPEAT_DELAY
+		elif Input.is_key_pressed(KEY_4):
+			_cast_slot(4)
+			_action_cooldown = ACTION_REPEAT_DELAY
+		elif Input.is_key_pressed(KEY_5):
+			_cast_slot(5)
+			_action_cooldown = ACTION_REPEAT_DELAY
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -188,31 +221,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_update_hud()
 		return
 
-	# モーダル表示中は ESC のみ受け付け（F で開いた spell_builder を閉じる）
-	if spell_builder_modal != null:
-		if event.keycode == KEY_ESCAPE:
-			_close_spell_builder_modal()
+	# 別ウィンドウ表示中はキー無視（ウィンドウ側でフォーカス処理）
+	if spell_builder_window != null:
 		return
 
+	# v0.9.3: 移動/旋回/詠唱/待機は _process で polling 処理（長押し連続）。
+	# 単発の F (ウィンドウ開く) / Enter (階段) のみここで処理。
+	# H/T/G デバッグキーは下記既存ブロックで処理。
 	match event.keycode:
-		# 移動キーは _process で polling 処理（v0.9.2 要求 1、長押し連続移動）
-		KEY_Q:
-			_player_action_turn(-1)
-		KEY_E:
-			_player_action_turn(1)
-		# --- INC-3 v0.9.2 (要求 3/4): キー再配置 ---
-		KEY_1:
-			_cast_slot(1)
-		KEY_2:
-			_cast_slot(2)
-		KEY_3:
-			_cast_slot(3)
-		KEY_4:
-			_cast_slot(4)
-		KEY_5:
-			_cast_slot(5)
-		KEY_SPACE:
-			_player_action_wait_and_heal()
 		KEY_F:
 			_open_spell_builder_modal()
 		KEY_ENTER:
@@ -303,43 +319,42 @@ func _player_action_wait_and_heal() -> void:
 	_update_hud()
 
 
-## INC-3 v0.9.2 (要求 4): F キーで spell_builder.tscn をモーダル表示。
-## CanvasLayer に重ねて instantiate、ESC で閉じる。spell_builder 側に「スロット保存」UI を別途追加予定。
+## INC-3 v0.9.3 (要求 5): F キーで spell_builder.tscn を別 OS ウィンドウで表示。
+## Godot 4 の Window ノードを使い、dungeon_view と独立した別ウィンドウとして開く。
+## サイズ調整・OS ウィンドウマネージャ操作・ALT+TAB が効く。
 func _open_spell_builder_modal() -> void:
-	if spell_builder_modal != null:
+	if spell_builder_window != null:
+		# 既に開いている → 前面化
+		spell_builder_window.grab_focus()
 		return
 	var scene: PackedScene = load("res://scenes/debug/spell_builder.tscn")
 	if scene == null:
 		_log("[color=#e88]spell_builder.tscn が読み込めません[/color]")
 		return
+	# 別ウィンドウを作成
+	var win := Window.new()
+	win.title = "Spell Builder — 魔法構築 (スロット保存して dungeon に戻る)"
+	win.size = Vector2i(1100, 800)
+	win.transient = true   # 親ウィンドウと連動（最小化等）
+	win.exclusive = false  # 排他しない（dungeon は閉じない、別操作可）
+	win.unresizable = false
+	win.close_requested.connect(_close_spell_builder_modal)
+	# spell_builder シーンを instantiate して window に add_child
 	var inst: Node = scene.instantiate()
-	# 既存 HUD レイヤーの上に重ねる
-	var hud_layer: CanvasLayer = get_node_or_null("HUDLayer")
-	if hud_layer != null:
-		# 別レイヤーで上に
-		var modal_layer := CanvasLayer.new()
-		modal_layer.name = "SpellBuilderModalLayer"
-		modal_layer.layer = 2  # HUD より上
-		add_child(modal_layer)
-		modal_layer.add_child(inst)
-		spell_builder_modal = modal_layer
-	else:
-		add_child(inst)
-		spell_builder_modal = inst
-	_log("[color=#a0c8f0]F: spell_builder を開きました (ESC で閉じる)[/color]")
-	# 今後: spell_builder に「現在のトークン列をスロット N に保存」ボタンを追加し、
-	# 押下時に Lexicon.set_spell_slot(N, tokens) を呼ぶ。INC-3 v0.9.2 では UI 雛形のみ。
-	# 暫定: モーダル内のキーボード入力は spell_builder 側が消費するため、
-	# dungeon_view 側は ESC のみ反応。
+	win.add_child(inst)
+	add_child(win)
+	win.popup_centered()
+	spell_builder_window = win
+	_log("[color=#a0c8f0]F: Spell Builder ウィンドウを開きました (ウィンドウ X で閉じる)[/color]")
 
 
-## モーダルを閉じる。
+## ウィンドウを閉じる。close_requested シグナル / F 再押下 で呼ばれる。
 func _close_spell_builder_modal() -> void:
-	if spell_builder_modal == null:
+	if spell_builder_window == null:
 		return
-	spell_builder_modal.queue_free()
-	spell_builder_modal = null
-	_log("[color=#888]spell_builder を閉じました[/color]")
+	spell_builder_window.queue_free()
+	spell_builder_window = null
+	_log("[color=#888]Spell Builder ウィンドウを閉じました[/color]")
 	_update_hud()
 
 
@@ -444,8 +459,12 @@ func _draw() -> void:
 				continue
 			var rect_pos := origin + Vector2(x, y) * TILE_SIZE
 			var c: Color
+			# v0.9.3 (要求 8): 視界外の壁は黒で塗りつぶし（floor の暗いグレーと区別）
 			if tile == "wall":
-				c = COLOR_WALL if visible else COLOR_WALL_EXPLORED
+				if visible:
+					c = COLOR_WALL
+				else:
+					c = Color.BLACK  # 視界外の壁は完全黒（既知でも闇に沈む演出）
 			elif tile == "stairs_down":
 				c = COLOR_STAIRS if visible else COLOR_FLOOR_EXPLORED
 			else:
@@ -489,7 +508,7 @@ func _update_hud() -> void:
 	var facing_str: String = facing_names[MapState.player_facing]
 	var in_sight: int = MapState.enemies_in_sight().size()
 	var mode: String = "[警戒]" if in_sight > 0 else "[平時]"
-	hud_label.text = "%s | 位置 %s 向き %s | 視界内 %d 体 %s\nWASD/矢印=移動(長押し可)  Q/E=旋回  1-5=スロット詠唱(±45°扇)  Space=待機+HP回復  F=魔法作成  Enter=階段" % [
+	hud_label.text = "%s | 位置 %s 向き %s | 視界内 %d 体 %s\nWASD/矢印=移動(長押し可・WA等同時押しで斜め8方向)  Q/E=旋回  1-5=スロット詠唱(±45°扇)  Space=待機+HP回復  F=Spell Builder ウィンドウ  Enter=階段" % [
 		status, pos_str, facing_str, in_sight, mode
 	]
 	_render_log()

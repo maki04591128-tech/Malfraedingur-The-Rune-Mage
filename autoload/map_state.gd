@@ -153,13 +153,15 @@ func _recompute_fov() -> void:
 
 
 func _update_facing_from_delta(delta: Vector2i) -> void:
-	if delta == Vector2i(0, -1):
+	# v0.9.3 (要求 7): 斜め移動対応。縦方向優先で向きを決める。
+	# (1, 1) → 南、(1, -1) → 北、(1, 0) → 東 のように。
+	if delta.y < 0:
 		player_facing = FACING_NORTH
-	elif delta == Vector2i(1, 0):
-		player_facing = FACING_EAST
-	elif delta == Vector2i(0, 1):
+	elif delta.y > 0:
 		player_facing = FACING_SOUTH
-	elif delta == Vector2i(-1, 0):
+	elif delta.x > 0:
+		player_facing = FACING_EAST
+	elif delta.x < 0:
 		player_facing = FACING_WEST
 
 

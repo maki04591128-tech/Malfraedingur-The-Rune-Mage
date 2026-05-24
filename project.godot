@@ -15,6 +15,10 @@ run/main_scene="res://scenes/dungeon/dungeon_view.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
+[display]
+
+window/subwindows/embed_subwindows=false
+
 [autoload]
 
 EventBus="*res://autoload/event_bus.gd"
