@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="InscriptionResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/inscriptions/inscription_resource.gd" id="1_insc"]
+
+[resource]
+script = ExtResource("1_insc")
+id = "insc_intermediate_eldr"
+difficulty = "intermediate"
+runes = "ᛂᛚᛏᚱ"
+prompt_ja = "この碑文の意味は？「火」を表す古ノルド語元素語は？"
+answer_word_ids = PackedStringArray("eldr")
+choices_word_ids = PackedStringArray("vatn", "vindr", "jorth")
+comprehension_gain = [{"word_id": "eldr", "amount": 20}]
+time_cost = 2.0
+source = "オリジナル / Zoëga"
+verified = false

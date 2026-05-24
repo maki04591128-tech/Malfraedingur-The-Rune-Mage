@@ -34,6 +34,10 @@ const COLOR_WALL := Color(0.30, 0.26, 0.20)
 const COLOR_FLOOR_EXPLORED := Color(0.05, 0.04, 0.03)
 const COLOR_WALL_EXPLORED := Color(0.12, 0.10, 0.08)
 const COLOR_STAIRS := Color(0.85, 0.65, 0.20)
+const COLOR_STUDY_SPOT := Color(0.40, 0.85, 0.45)   ## INC-4 B-2: 学習スポット (薄緑)
+const COLOR_STUDY_SPOT_USED := Color(0.25, 0.40, 0.25)  ## 消費後
+const COLOR_INSCRIPTION := Color(0.70, 0.55, 0.95)  ## INC-4 B-3: 碑文タイル (紫)
+const COLOR_INSCRIPTION_SOLVED := Color(0.35, 0.30, 0.50) ## 翻訳済み
 const COLOR_PLAYER := Color(0.30, 0.85, 0.95)
 const COLOR_ENEMY := Color(0.85, 0.30, 0.25)
 const COLOR_BOSS := Color(0.95, 0.15, 0.15)
@@ -64,6 +68,17 @@ const LOG_MAX_LINES := 6
 # INC-3 v0.9.2: モーダル UI 状態（旧 spell_input_active は要求 3 の 1 ステップ詠唱化で廃止）
 # v0.9.3 (要求 5): Window ノードに変更し、別 OS ウィンドウとして表示
 var spell_builder_window: Window = null   ## F キーで開く spell_builder の別ウィンドウ
+
+## INC-4 B-3: 碑文翻訳モーダル（プレイヤーが碑文タイル上で Enter で開く）。
+##   { "inscription": InscriptionResource, "shuffled_choices": [word_id], "tile_pos": Vector2i } or null
+var inscription_modal: Dictionary = {}
+var inscription_modal_window: Window = null
+
+## INC-4 C: 巻き戻し画面オーバーレイ（_trigger_rewind で開く）。
+##   { "reason": String, "delta": Dictionary } or null
+var rewind_overlay_active: bool = false
+var rewind_overlay_container: Control = null
+var _last_rewind_reason: String = ""
 
 # INC-3 v0.9.2 (要求 1): 移動キー長押しのリピート制御。
 # OS のキーリピート echo は Godot 4 で安定しないため、_process で polling する方式に変更。
@@ -117,8 +132,8 @@ func _ready() -> void:
 
 	# データロード
 	_load_data()
-	# ループ開始
-	_start_new_loop()
+	# ループ開始（初回起動は count_as_new_loop=false で Lexicon.stats.loops を増やさない）
+	_start_new_loop("", false)
 	queue_redraw()
 	_update_hud()
 
@@ -138,12 +153,21 @@ func _load_data() -> void:
 	rng_master_seed = int(Time.get_unix_time_from_system())
 
 
-func _start_new_loop() -> void:
+## ループ開始: GameState を初期化し、Lexicon の loop_delta を新ループ用に。
+## INC-4 C: 巻き戻し画面 (rewind_overlay) はここで閉じる（_close_rewind_overlay）。
+##   manual/death/timeout のどれでも同じ経路を通る（04 §7「同一処理」）。
+##   count_as_new_loop=false のときは初回起動扱いで Lexicon.stats.loops を +1 しない。
+func _start_new_loop(rewind_reason: String = "", count_as_new_loop: bool = true) -> void:
 	GameState.reset()
+	if count_as_new_loop:
+		Lexicon.reset_for_new_loop(rewind_reason)
 	game_over = false
+	rewind_overlay_active = false
 	log_lines.clear()
 	_log("[color=#f0d080]── 新しいループ %d 開始 ──[/color]" % GameState.loop_count)
 	_load_floor_for(GameState.floor_index)
+	queue_redraw()
+	_update_hud()
 
 
 func _load_floor_for(depth: int) -> void:
@@ -267,9 +291,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if game_over:
 		if event.keycode == KEY_SPACE or event.keycode == KEY_ENTER:
-			_start_new_loop()
-			queue_redraw()
-			_update_hud()
+			_close_rewind_overlay()
+			# 巻き戻し起因の game_over なら _last_rewind_reason、Helgrind 踏破クリアなら ""
+			_start_new_loop(_last_rewind_reason)
+			_last_rewind_reason = ""
 		return
 
 	# 別ウィンドウ表示中はキー無視（ウィンドウ側でフォーカス処理）
@@ -277,17 +302,22 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 
 	# v0.9.3: 移動/旋回/詠唱/待機は _process で polling 処理（長押し連続）。
-	# 単発の F (ウィンドウ開く) / Enter (階段) / Tab (プレビュースロット切替) のみここで処理。
+	# 単発の F (ウィンドウ開く) / Enter (階段 or 学習 or 碑文) / Tab (プレビュー切替) /
+	# R (任意巻き戻し、INC-4 D) のみここで処理。
 	# v0.9.4: INC-3 検証用 DEBUG キー H/T/G は削除（INC-3 検証完了済み、INC-3.5 では不要）。
 	# v0.9.7: Tab で _active_preview_slot を 1→2→3→4→5→1 で巡回切替。詠唱発火はしない、
 	#         スロットキー (1-5) は従来通り独立に詠唱を打つ。
+	# INC-4: Enter は「階段 / 学習スポット / 碑文」を自動判別 (_interact_or_descend)。
+	#        R は任意巻き戻し (öld renna aptr) の発火（INC-4 D / 01 §3.6 損切り）。
 	match event.keycode:
 		KEY_F:
 			_open_spell_builder_modal()
 		KEY_ENTER:
-			_try_descend_stairs()
+			_interact_or_descend()
 		KEY_TAB:
 			_cycle_preview_slot()
+		KEY_R:
+			_request_manual_rewind()
 
 
 ## v0.9.7: Tab で次のスロットをプレビュー対象に。Lexicon に登録のないスロットも巡回するが、
@@ -354,12 +384,53 @@ func _cast_slot(slot: int) -> void:
 		preview.append(String(t.get("word_id", "?")))
 	_log("[color=#a0c8f0]🎯 スロット %d: %s[/color]" % [slot, " ".join(preview)])
 	_apply_cast_result(result)
+	# INC-4 B-1: 文法 OK + 暴発なしのときだけ実戦学習 (03 §6 D6)。
+	_maybe_grant_combat_learning(tokens_in, result)
 	# Δ_cast = 1.0 + 0.5 × 語数 + 0.5 × 語ティア合計（簡易近似で 1.0 + 1.0×語数）
 	var delta: float = 1.0 + 0.5 * float(tokens_in.size())
 	_advance_world_time(delta)
 	_enemies_take_turn()
 	queue_redraw()
 	_update_hud()
+
+
+## INC-4 B-1: 実戦学習。詠唱結果が 「文法 OK + 暴発なし + 対象あり」 のとき、
+## 使用語の理解度を少量上昇させる（03 §6 D6 「文法的に正しい詠唱でのみ伸びる」）。
+##   - 効果語 / 対象語 (effect/target word_class) : +2
+##   - 修飾語 / 範囲語 / 方向語 / 元素語 (modifier/range/direction/element) : +1
+##   - 上限 100 で clamp（Lexicon.add_comprehension が内部で行う）。
+## 暴発時・文法 NG 時・対象なしのときは伸びない（誤詠唱は獲得なし＝是正フィードバックのみ）。
+const COMBAT_LEARN_CORE_GAIN := 2
+const COMBAT_LEARN_AUX_GAIN := 1
+func _maybe_grant_combat_learning(tokens_in: Array, result: CastResult) -> void:
+	if result == null or result.grammar_report == null:
+		return
+	if not result.grammar_report.overall_pass:
+		return
+	if result.resolved != null and result.resolved.misfired:
+		return
+	if result.target_set == null or result.target_set.is_empty():
+		return
+	# 各使用語に対して amount を決めて加算。重複語は最初の出現のみ扱う（過剰加算回避）。
+	var seen: Dictionary = {}
+	var gained_words: PackedStringArray = PackedStringArray()
+	for tok in tokens_in:
+		var word_id: String = String(tok.get("word_id", ""))
+		if word_id.is_empty() or seen.has(word_id):
+			continue
+		seen[word_id] = true
+		var w: WordResource = Lexicon.get_word(word_id)
+		if w == null:
+			continue
+		var amount: int = COMBAT_LEARN_AUX_GAIN
+		match w.word_class:
+			"effect", "target": amount = COMBAT_LEARN_CORE_GAIN
+			_: amount = COMBAT_LEARN_AUX_GAIN
+		var actual: int = int(Lexicon.add_comprehension(word_id, amount))
+		if actual > 0:
+			gained_words.append("%s +%d" % [word_id, actual])
+	if not gained_words.is_empty():
+		_log("[color=#cfa]📖 学習: %s[/color]" % ", ".join(gained_words))
 
 
 ## v0.9.7: 詠唱前ドライラン。direction_required が立てば true を返す。
@@ -493,12 +564,38 @@ func _advance_world_time(delta: float) -> void:
 		_trigger_rewind("timeout")
 
 
+## INC-4: Enter キー押下時、プレイヤー位置のタイルに応じて自動でアクションを選ぶ。
+##   stairs_down  → 階段降下（既存）
+##   study_spot   → 集中学習 (B-2)
+##   inscription  → 碑文翻訳モーダル (B-3)
+##   それ以外     → 「ここに階段はない」ログのみ
+func _interact_or_descend() -> void:
+	if MapState.map_data == null:
+		return
+	if rewind_overlay_active:
+		# 巻き戻し画面では Enter は「次のループへ進む」に乗っ取り
+		_start_new_loop()
+		return
+	var here: Vector2i = MapState.player_pos
+	var tile_id: String = String(MapState.map_data.get_tile(here))
+	match tile_id:
+		"stairs_down":
+			_try_descend_stairs()
+		"study_spot":
+			_use_study_spot(here)
+		"inscription":
+			_open_inscription_modal(here)
+		_:
+			_log("[color=#888]ここでインタラクトできるものはない[/color]")
+
+
 func _try_descend_stairs() -> void:
 	if MapState.is_player_on_stairs():
 		GameState.descend_floor()
 		if GameState.floor_index > floor_templates.size():
 			# 全踏破
 			_log("[color=#ff8]✦ Helgrind 踏破 — 滅びを止めた[/color]")
+			Lexicon.mark_helgrind_cleared()
 			EventBus.helgrind_cleared.emit()
 			game_over = true
 		else:
@@ -508,10 +605,285 @@ func _try_descend_stairs() -> void:
 		_log("[color=#888]ここに階段はない[/color]")
 
 
+# ============================================================================
+#  INC-4 B-2: 学習スポット
+# ============================================================================
+
+const STUDY_SPOT_WORLD_TIME_COST := 5.0    ## 05 BalanceConfig.world_time_costs.study_focus
+const STUDY_SPOT_COMPREHENSION_GAIN := 15  ## 集中学習 1 回あたりの理解度上昇
+
+func _use_study_spot(pos: Vector2i) -> void:
+	var s: Dictionary = MapState.map_data.study_spot_at(pos)
+	if s.is_empty():
+		_log("[color=#888]ここに学習スポットはない[/color]")
+		return
+	if bool(s.get("consumed", false)):
+		_log("[color=#888]この学習スポットは今ループで使用済み[/color]")
+		return
+	var word_id: String = String(s.get("word_id", ""))
+	if word_id.is_empty():
+		return
+	var before: int = int(Lexicon.get_comprehension(word_id))
+	var actual: int = int(Lexicon.add_comprehension(word_id, STUDY_SPOT_COMPREHENSION_GAIN))
+	s["consumed"] = true
+	_log("[color=#8f8]📚 集中学習: %s の理解度 %d → %d (+%d)、世界時間 -%.1f[/color]" % [
+		word_id, before, before + actual, actual, STUDY_SPOT_WORLD_TIME_COST
+	])
+	_advance_world_time(STUDY_SPOT_WORLD_TIME_COST)
+	_enemies_take_turn()
+	queue_redraw()
+	_update_hud()
+
+
+# ============================================================================
+#  INC-4 B-3: 碑文翻訳
+# ============================================================================
+
+func _open_inscription_modal(pos: Vector2i) -> void:
+	var ins: Dictionary = MapState.map_data.inscription_at(pos)
+	if ins.is_empty():
+		_log("[color=#888]ここに碑文はない[/color]")
+		return
+	if bool(ins.get("solved", false)):
+		_log("[color=#888]この碑文は今ループで翻訳済み[/color]")
+		return
+	if inscription_modal_window != null:
+		return
+	var ins_id: String = String(ins.get("inscription_id", ""))
+	var ins_path := "res://data/inscriptions/%s.tres" % ins_id
+	if not ResourceLoader.exists(ins_path):
+		_log("[color=#e88]碑文リソースが見つからない: %s[/color]" % ins_path)
+		return
+	var ins_res: Resource = load(ins_path) as Resource
+	if ins_res == null:
+		return
+	# 選択肢を組み立て: 正答 + 誤答候補をシャッフル
+	var all_choices: PackedStringArray = PackedStringArray()
+	var ans: PackedStringArray = PackedStringArray(ins_res.get("answer_word_ids"))
+	var ch: PackedStringArray = PackedStringArray(ins_res.get("choices_word_ids"))
+	for w in ans:
+		all_choices.append(w)
+	for w in ch:
+		all_choices.append(w)
+	# シャッフル（Fisher-Yates、deterministic は不要）
+	for i in range(all_choices.size() - 1, 0, -1):
+		var j: int = randi() % (i + 1)
+		var tmp: String = all_choices[i]
+		all_choices[i] = all_choices[j]
+		all_choices[j] = tmp
+	inscription_modal = {
+		"inscription": ins_res,
+		"shuffled_choices": all_choices,
+		"tile_pos": pos,
+	}
+	_build_inscription_modal_window(ins_res, all_choices)
+
+
+func _build_inscription_modal_window(ins_res: Resource, choices: PackedStringArray) -> void:
+	var win := Window.new()
+	win.title = "ルーン碑文 — %s" % String(ins_res.get("id"))
+	win.size = Vector2i(640, 480)
+	win.transient = true
+	win.exclusive = true
+	win.close_requested.connect(_close_inscription_modal)
+	var root := VBoxContainer.new()
+	root.anchor_right = 1.0
+	root.anchor_bottom = 1.0
+	root.offset_left = 24
+	root.offset_top = 24
+	root.offset_right = -24
+	root.offset_bottom = -24
+	root.add_theme_constant_override("separation", 16)
+	win.add_child(root)
+	var runes_label := Label.new()
+	runes_label.text = String(ins_res.get("runes"))
+	runes_label.add_theme_font_size_override("font_size", 48)
+	root.add_child(runes_label)
+	var prompt_label := Label.new()
+	prompt_label.text = String(ins_res.get("prompt_ja"))
+	prompt_label.add_theme_font_size_override("font_size", 18)
+	prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(prompt_label)
+	root.add_child(HSeparator.new())
+	for choice_word in choices:
+		var btn := Button.new()
+		var w_res: WordResource = Lexicon.get_word(choice_word)
+		var label_text: String = choice_word
+		if w_res != null and not w_res.get_gloss("ja").is_empty():
+			label_text = "%s （%s）" % [choice_word, w_res.get_gloss("ja")]
+		btn.text = label_text
+		btn.add_theme_font_size_override("font_size", 16)
+		btn.pressed.connect(_on_inscription_choice.bind(choice_word))
+		root.add_child(btn)
+	add_child(win)
+	win.popup_centered()
+	inscription_modal_window = win
+
+
+func _on_inscription_choice(chosen_word_id: String) -> void:
+	if inscription_modal.is_empty():
+		return
+	var ins_res: Resource = inscription_modal["inscription"]
+	var tile_pos: Vector2i = inscription_modal["tile_pos"]
+	var ans_list: PackedStringArray = PackedStringArray(ins_res.get("answer_word_ids"))
+	var time_cost: float = float(ins_res.get("time_cost"))
+	var correct: bool = chosen_word_id in ans_list
+	if correct:
+		# 報酬: comprehension_gain を全部加算
+		var gained: PackedStringArray = PackedStringArray()
+		var gains_arr: Array = ins_res.get("comprehension_gain") as Array
+		for gain in gains_arr:
+			if typeof(gain) != TYPE_DICTIONARY:
+				continue
+			var w_id: String = String(gain.get("word_id", ""))
+			var amount: int = int(gain.get("amount", 0))
+			if w_id.is_empty() or amount <= 0:
+				continue
+			var actual: int = int(Lexicon.add_comprehension(w_id, amount))
+			gained.append("%s +%d" % [w_id, actual])
+		_log("[color=#fc8]✦ 碑文翻訳成功: %s [/color]" % ", ".join(gained))
+		# tile を「solved」状態に
+		var ins_dict: Dictionary = MapState.map_data.inscription_at(tile_pos)
+		if not ins_dict.is_empty():
+			ins_dict["solved"] = true
+		_advance_world_time(time_cost)
+	else:
+		_log("[color=#e88]✗ 翻訳失敗: %s は違う意味だ[/color]" % chosen_word_id)
+		_advance_world_time(time_cost)
+	_close_inscription_modal()
+	_enemies_take_turn()
+	queue_redraw()
+	_update_hud()
+
+
+func _close_inscription_modal() -> void:
+	if inscription_modal_window != null:
+		inscription_modal_window.queue_free()
+		inscription_modal_window = null
+	inscription_modal = {}
+
+
+# ============================================================================
+#  INC-4 D: 任意巻き戻し（öld renna aptr 自詠唱、損切り）
+# ============================================================================
+
+## INC-4 C: 巻き戻し画面オーバーレイを表示。Lexicon.get_loop_delta() の結果を可視化し、
+## 「今ループで新たに伸びた語 N 語」を提示する。Space/Enter で次ループへ。
+##   reason: "death" | "timeout" | "manual" — 表示文言の出し分けに使う
+func _show_rewind_overlay(reason: String) -> void:
+	_last_rewind_reason = reason
+	rewind_overlay_active = true
+	if rewind_overlay_container != null:
+		rewind_overlay_container.queue_free()
+		rewind_overlay_container = null
+	var layer := get_node_or_null("HUDLayer")
+	if layer == null:
+		return
+	var panel := ColorRect.new()
+	panel.color = Color(0.04, 0.03, 0.06, 0.85)
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	layer.add_child(panel)
+	var vbox := VBoxContainer.new()
+	vbox.anchor_left = 0.15
+	vbox.anchor_right = 0.85
+	vbox.anchor_top = 0.12
+	vbox.anchor_bottom = 0.88
+	vbox.add_theme_constant_override("separation", 14)
+	panel.add_child(vbox)
+	var title := Label.new()
+	var reason_ja: String = {
+		"death": "死亡 (HP=0)",
+		"timeout": "時間切れ (7 日終了)",
+		"manual": "任意巻き戻し (損切り)",
+	}.get(reason, reason)
+	title.text = "── öld renna aptr ──   時を巻き戻す  [%s]" % reason_ja
+	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_color_override("font_color", Color(0.85, 0.75, 0.95))
+	vbox.add_child(title)
+	var subtitle := Label.new()
+	subtitle.text = "世界と肉体は 7 日前へ。だが主人公の覚えた言葉は戻らない。"
+	subtitle.add_theme_font_size_override("font_size", 14)
+	subtitle.add_theme_color_override("font_color", Color(0.78, 0.78, 0.85))
+	vbox.add_child(subtitle)
+	vbox.add_child(HSeparator.new())
+	var heading := Label.new()
+	var delta_dict: Dictionary = Lexicon.get_loop_delta()
+	heading.text = "今ループで新たに伸びた語 (%d 語)" % delta_dict.size()
+	heading.add_theme_font_size_override("font_size", 20)
+	heading.add_theme_color_override("font_color", Color(0.95, 0.90, 0.70))
+	vbox.add_child(heading)
+	if delta_dict.is_empty():
+		var none_label := Label.new()
+		none_label.text = "（なし — 次ループでは碑文や学習スポットを試してみよう）"
+		none_label.add_theme_font_size_override("font_size", 16)
+		none_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+		vbox.add_child(none_label)
+	else:
+		for word_id in delta_dict.keys():
+			var d: Dictionary = delta_dict[word_id]
+			var line := Label.new()
+			var w_res: WordResource = Lexicon.get_word(word_id)
+			var gloss := ""
+			if w_res != null:
+				gloss = w_res.get_gloss("ja")
+			line.text = "  ・ %s （%s）  %d → %d  (+%d)" % [
+				word_id, gloss,
+				int(d.get("before", 0)),
+				int(d.get("after", 0)),
+				int(d.get("gain", 0)),
+			]
+			line.add_theme_font_size_override("font_size", 16)
+			line.add_theme_color_override("font_color", Color(0.85, 0.95, 0.85))
+			vbox.add_child(line)
+	vbox.add_child(HSeparator.new())
+	var stats_label := Label.new()
+	stats_label.text = "累積: ループ %d 回 / 巻き戻し %d 回 / 発見語 %d 語" % [
+		int(Lexicon.stats.get("loops", 0)),
+		int(Lexicon.stats.get("rewinds", 0)),
+		int(Lexicon.stats.get("words_discovered", 0)),
+	]
+	stats_label.add_theme_font_size_override("font_size", 14)
+	stats_label.add_theme_color_override("font_color", Color(0.75, 0.80, 0.90))
+	vbox.add_child(stats_label)
+	var prompt := Label.new()
+	prompt.text = "[Space / Enter] 次のループへ"
+	prompt.add_theme_font_size_override("font_size", 18)
+	prompt.add_theme_color_override("font_color", Color(0.95, 0.90, 0.70))
+	vbox.add_child(prompt)
+	rewind_overlay_container = panel
+
+
+func _close_rewind_overlay() -> void:
+	if rewind_overlay_container != null:
+		rewind_overlay_container.queue_free()
+		rewind_overlay_container = null
+	rewind_overlay_active = false
+
+
+## R キーで「任意巻き戻し」を要求する。確認モーダルは挟まずすぐ巻き戻す（最小実装）。
+## 物語上は「プレイヤーが意図的に öld renna aptr を唱える」演出（01 §3.6）。
+## 通常の死亡・時間切れと同じ rewind 経路を通る。
+func _request_manual_rewind() -> void:
+	if game_over or rewind_overlay_active:
+		return
+	_log("[color=#a8f]🜨 öld renna aptr — 時を巻き戻す (manual / 損切り)[/color]")
+	_trigger_rewind("manual")
+
+
+## INC-4 A/C: 巻き戻し発火。順序厳守 (04 §7):
+##   1. Lexicon.snapshot_loop_delta()      — 「今ループで伸びた語」を確定
+##   2. Lexicon.save_to_disk()              — 記憶を確定保存（reset の前）
+##   3. EventBus.rewind_triggered.emit()    — 周知
+##   4. rewind_overlay 表示                 — プレイヤーが Space/Enter で次ループへ
+## GameState.reset() / MapState.reset() / 新 seed 再生成は _start_new_loop で行う。
 func _trigger_rewind(reason: String) -> void:
+	Lexicon.snapshot_loop_delta()
+	Lexicon.save_to_disk()
 	EventBus.rewind_triggered.emit(reason)
 	_log("[color=#a8f]── öld renna aptr — 時を巻き戻す (%s) ──[/color]" % reason)
-	_log("[color=#888]Space で次のループへ[/color]")
+	_show_rewind_overlay(reason)
 	game_over = true
 
 
@@ -540,6 +912,20 @@ func _draw() -> void:
 					c = Color.BLACK  # 視界外の壁は完全黒（既知でも闇に沈む演出）
 			elif tile == "stairs_down":
 				c = COLOR_STAIRS if visible else COLOR_FLOOR_EXPLORED
+			elif tile == "study_spot":
+				var s: Dictionary = md.study_spot_at(pos)
+				var used: bool = bool(s.get("consumed", false))
+				if visible:
+					c = COLOR_STUDY_SPOT_USED if used else COLOR_STUDY_SPOT
+				else:
+					c = COLOR_FLOOR_EXPLORED
+			elif tile == "inscription":
+				var ins_d: Dictionary = md.inscription_at(pos)
+				var solved: bool = bool(ins_d.get("solved", false))
+				if visible:
+					c = COLOR_INSCRIPTION_SOLVED if solved else COLOR_INSCRIPTION
+				else:
+					c = COLOR_FLOOR_EXPLORED
 			else:
 				c = COLOR_FLOOR if visible else COLOR_FLOOR_EXPLORED
 			draw_rect(Rect2(rect_pos, Vector2(TILE_SIZE - 1, TILE_SIZE - 1)), c, true)
@@ -547,6 +933,16 @@ func _draw() -> void:
 				# 階段マーク
 				var center := rect_pos + Vector2(TILE_SIZE / 2.0, TILE_SIZE / 2.0)
 				draw_circle(center, TILE_SIZE / 4.0, Color(0.2, 0.15, 0.05))
+			elif tile == "study_spot" and visible:
+				# 「📚」相当の小さい本マーク
+				var sp_center := rect_pos + Vector2(TILE_SIZE / 2.0, TILE_SIZE / 2.0)
+				draw_rect(Rect2(sp_center - Vector2(5, 4), Vector2(10, 8)), Color(0.10, 0.20, 0.10), false, 1.5)
+			elif tile == "inscription" and visible:
+				# 「ᚱ」相当のルーンマーク（簡易: 縦棒＋右斜め）
+				var ic := rect_pos + Vector2(TILE_SIZE / 2.0, TILE_SIZE / 2.0)
+				draw_line(ic + Vector2(-3, -6), ic + Vector2(-3, 6), Color(0.25, 0.15, 0.30), 1.5)
+				draw_line(ic + Vector2(-3, -6), ic + Vector2(3, -2), Color(0.25, 0.15, 0.30), 1.5)
+				draw_line(ic + Vector2(-3, 0), ic + Vector2(3, 5), Color(0.25, 0.15, 0.30), 1.5)
 
 	# 敵
 	for e in md.enemies:
@@ -691,7 +1087,7 @@ func _update_hud() -> void:
 	for t in preview_tokens:
 		preview_words.append(String(t.get("word_id", "?")))
 	var preview_str: String = "(空)" if preview_words.is_empty() else " ".join(preview_words)
-	hud_label.text = "%s | 位置 %s 向き %s | 視界内 %d 体 %s | プレビュー: スロット %d [%s]\nWASD/矢印=移動(長押し可・斜め8方向)  Q/E=旋回  1-5=スロット詠唱(±45°扇)  Space=待機+HP回復  Tab=プレビュー切替  F=Spell Builder  Enter=階段" % [
+	hud_label.text = "%s | 位置 %s 向き %s | 視界内 %d 体 %s | プレビュー: スロット %d [%s]\nWASD/矢印=移動(長押し可・斜め8方向)  Q/E=旋回  1-5=スロット詠唱(±45°扇)  Space=待機+HP回復  Tab=プレビュー切替  F=Spell Builder  Enter=階段/学習/碑文  R=öld renna aptr(任意巻き戻し)" % [
 		status, pos_str, facing_str, in_sight, mode, _active_preview_slot, preview_str
 	]
 	_render_log()

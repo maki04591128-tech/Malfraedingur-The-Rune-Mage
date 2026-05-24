@@ -210,8 +210,12 @@ GrammarReport を可読表示                    ResolvedEffect を適用（対�
 - 巻き戻し（死亡/7日切れ/任意巻き戻し）時: `Lexicon.save()` → `GameState.reset()` → `MapState.reset()` → 新規 seed で `DungeonGenerator.generate()` の順（v0.6）。**逆順厳禁**（先に記憶を確定保存してから世界を戻す）。
 - 任意巻き戻し（`01` 3.6 の損切り）：プレイヤー操作 → 同じ巻き戻し経路を通る（死亡時と同一処理。`öld renna aptr` 演出を表示）。
 - セーブ運用方針（確定）：アーティファクトの記録点は**ループ境界**。ループ途中の任意地点セーブによる save-scum は不可（ローグライトの緊張を保つ）。中断再開は「同一ループの一時中断」として別途扱い、巻き戻し記録とは区別する。
+- INC-4 実装メモ:
+  - `Lexicon.save_to_disk()` / `load_from_disk()` は JSON で `user://lexicon.save` に書く。schema は本節および 05 §7 を正典。`spell_slots` は知識側で永続化する（D7 と同思想、巻き戻し非対象）。
+  - 巻き戻し順序: `_trigger_rewind()` → `Lexicon.snapshot_loop_delta()` → `Lexicon.save_to_disk()` → `EventBus.rewind_triggered.emit()` → overlay 表示 → `_start_new_loop(reason)` → `GameState.reset()` → `Lexicon.reset_for_new_loop(reason)` → 新 seed で `DungeonGenerator.generate()`。「逆順厳禁」を守る（先に記憶を確定保存してから世界を戻す）。
+  - 初回起動の `_start_new_loop("", false)` は `count_as_new_loop=false` で `Lexicon.stats.loops` を増やさない。
 - 必須テスト:
-  - `test_rewind_preserves_lexicon`（巻き戻し後も理解度が一致＝記憶保持）
+  - `test_rewind_preserves_lexicon`（巻き戻し後も理解度が一致＝記憶保持）— INC-4 で `tests/test_smoke.gd` の Lexicon save/load roundtrip ブロックが担保
   - `test_gamestate_reset_clears_loop`（ループ状態が開始時へ）
   - `test_mapstate_reset_clears_position` (v0.6 新規・INC-3 範囲): プレイヤー位置・向き・FOV が初期化される
   - `test_dungeon_regenerates_on_rewind` (v0.6 新規・INC-3 範囲): 巻き戻しで新規 seed のマップが生成される。起点部屋の配置のみ固定（`09 §2.5`）

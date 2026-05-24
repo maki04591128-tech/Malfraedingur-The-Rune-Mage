@@ -135,6 +135,39 @@ static func generate(floor_template: FloorTemplate, dungeon_seed: DungeonSeed) -
 				"hp": 0,  # 後で EnemyResource からセット
 			})
 
+	# INC-4 B-2/B-3: 学習スポット・碑文タイルを通常部屋に配置（敵・既存タイルを避ける）
+	var normal_rooms_for_features: Array = []
+	for r_any in rooms:
+		var r: RoomRect = r_any
+		if r.kind == "normal":
+			normal_rooms_for_features.append(r)
+	if floor_template.study_spot_word_ids.size() > 0 and not normal_rooms_for_features.is_empty():
+		var ss_count := rng.randi_range(floor_template.study_spot_count.x, floor_template.study_spot_count.y)
+		for _ss in range(ss_count):
+			var place := _pick_empty_floor_in_rooms(map, normal_rooms_for_features, rng, 30)
+			if place == Vector2i(-1, -1):
+				continue
+			var word_id: String = floor_template.study_spot_word_ids[rng.randi_range(0, floor_template.study_spot_word_ids.size() - 1)]
+			map.set_tile(place, "study_spot")
+			map.study_spots.append({
+				"pos": place,
+				"word_id": word_id,
+				"consumed": false,
+			})
+	if floor_template.inscription_ids.size() > 0 and not normal_rooms_for_features.is_empty():
+		var ins_count := rng.randi_range(floor_template.inscription_count.x, floor_template.inscription_count.y)
+		for _ins_i in range(ins_count):
+			var place_i := _pick_empty_floor_in_rooms(map, normal_rooms_for_features, rng, 30)
+			if place_i == Vector2i(-1, -1):
+				continue
+			var ins_id: String = floor_template.inscription_ids[rng.randi_range(0, floor_template.inscription_ids.size() - 1)]
+			map.set_tile(place_i, "inscription")
+			map.inscriptions.append({
+				"pos": place_i,
+				"inscription_id": ins_id,
+				"solved": false,
+			})
+
 	# 7. ボス配置（階段部屋に置く: 階段の手前で戦う想定、踏破=ボス撃破後）
 	if map.has_boss and stairs_room != null:
 		var boss_pos := stairs_room.center() + Vector2i(1, 0)
@@ -188,3 +221,21 @@ static func _random_floor_in_room(room: RoomRect, rng: RandomNumberGenerator) ->
 	var rx := room.x + rng.randi_range(0, room.w - 1)
 	var ry := room.y + rng.randi_range(0, room.h - 1)
 	return Vector2i(rx, ry)
+
+
+## INC-4: 部屋群の中から、既に "floor" タイル（player_start / stairs_down / 既存配置 study_spot/inscription ではない）
+## かつ敵が居ない空き床を 1 つ選ぶ。max_tries 回ランダム試行して見つからなければ Vector2i(-1, -1)。
+static func _pick_empty_floor_in_rooms(map: MapData, rooms_pool: Array, rng: RandomNumberGenerator, max_tries: int) -> Vector2i:
+	for _try in range(max_tries):
+		var room: RoomRect = rooms_pool[rng.randi_range(0, rooms_pool.size() - 1)]
+		var px := room.x + rng.randi_range(0, room.w - 1)
+		var py := room.y + rng.randi_range(0, room.h - 1)
+		var pos := Vector2i(px, py)
+		if map.get_tile(pos) != "floor":
+			continue
+		if not map.enemy_at(pos).is_empty():
+			continue
+		if pos == map.player_start_pos or pos == map.stairs_down_pos:
+			continue
+		return pos
+	return Vector2i(-1, -1)

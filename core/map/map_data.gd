@@ -16,6 +16,14 @@ var has_boss: bool = false                      ## このフロアでボス出�
 var boss_id: String = ""                        ## ボス ID（has_boss=true のとき）
 var depth: int = 1                              ## 階層番号（1, 2, 3...）
 
+## INC-4 B-2: 学習スポット。 [ { "pos": Vector2i, "word_id": String, "consumed": bool }, ... ]
+## consumed=true なら 1 度使用済み（同一ループで再学習不可、巻き戻しで再生成）。
+var study_spots: Array = []
+
+## INC-4 B-3: 碑文タイル。 [ { "pos": Vector2i, "inscription_id": String, "solved": bool }, ... ]
+## solved=true なら翻訳済み（再表示しない、巻き戻しで再配置）。
+var inscriptions: Array = []
+
 
 func _init(p_size: Vector2i) -> void:
 	size = p_size
@@ -42,10 +50,27 @@ func set_tile(pos: Vector2i, tile_id: String) -> void:
 	tiles[pos.y][pos.x] = tile_id
 
 
-## passable 判定（衝突計算用）。
+## passable 判定（衝突計算用）。INC-4: study_spot / inscription も通行可。
 func is_passable(pos: Vector2i) -> bool:
 	var t := get_tile(pos)
-	return t == "floor" or t == "stairs_down" or t == "player_start"
+	return t == "floor" or t == "stairs_down" or t == "player_start" \
+		or t == "study_spot" or t == "inscription"
+
+
+## INC-4 B-2: 指定位置の学習スポットを取得。未消費のものを優先（同位置に複数想定なし）。
+func study_spot_at(pos: Vector2i) -> Dictionary:
+	for s in study_spots:
+		if Vector2i(s.get("pos", Vector2i.ZERO)) == pos:
+			return s
+	return {}
+
+
+## INC-4 B-3: 指定位置の碑文を取得。
+func inscription_at(pos: Vector2i) -> Dictionary:
+	for ins in inscriptions:
+		if Vector2i(ins.get("pos", Vector2i.ZERO)) == pos:
+			return ins
+	return {}
 
 
 ## blocks_sight 判定（FOV 用）。

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="InscriptionResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/inscriptions/inscription_resource.gd" id="1_insc"]
+
+[resource]
+script = ExtResource("1_insc")
+id = "insc_intro_fjandi"
+difficulty = "intro"
+runes = "ᚠᛁᛅᚾᛏᛁ"
+prompt_ja = "この碑文の意味は？「敵」を表す古ノルド語名詞は？"
+answer_word_ids = PackedStringArray("fjandi")
+choices_word_ids = PackedStringArray("sjalfr", "meida", "naer")
+comprehension_gain = [{"word_id": "fjandi", "amount": 15}]
+time_cost = 1.0
+source = "オリジナル / Zoëga"
+verified = false

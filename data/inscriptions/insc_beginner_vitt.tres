@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="InscriptionResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/inscriptions/inscription_resource.gd" id="1_insc"]
+
+[resource]
+script = ExtResource("1_insc")
+id = "insc_beginner_vitt"
+difficulty = "beginner"
+runes = "ᚢᛁᛏᛏ"
+prompt_ja = "この碑文の意味は？「広く／一帯に」を表す古ノルド語範囲語は？"
+answer_word_ids = PackedStringArray("vitt")
+choices_word_ids = PackedStringArray("naer", "fjarri", "i_gegnum")
+comprehension_gain = [{"word_id": "vitt", "amount": 18}]
+time_cost = 1.5
+source = "オリジナル / CV"
+verified = false

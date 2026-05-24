@@ -305,7 +305,7 @@ func _ready() -> void:
 
 	# Lexicon が新規語も引ける
 	if lex != null:
-		r.assert_eq(lex.get_known_word_ids().size(), 9, "Lexicon: 9 語に拡張 (修飾語 +2)")
+		r.assert_eq(lex.get_known_word_ids().size(), 17, "INC-4: KNOWN_WORD_IDS 17 語 (基礎 9 + 範囲・方向 8)")
 		r.assert_not_null(lex.get_word("mikill"), "Lexicon.get_word('mikill') returns WordResource")
 
 	# --- T7（03 §5.5 v0.13）: elements / modifier 判定 ---
@@ -1155,15 +1155,14 @@ func _ready() -> void:
 		if slot1.size() >= 2:
 			r.assert_eq(String(slot1[0].get("word_id", "")), "meida", "v0.9.2: slot 1[0].word_id = meida")
 			r.assert_eq(String(slot1[1].get("word_id", "")), "fjandi", "v0.9.2: slot 1[1].word_id = fjandi")
-		# v0.9.7: スロット 2-4 は INC-3.5 プレビュー UI 検証用にデモ呪文が初期登録される。
-		# 初期値が「空」ではなく特定の呪文であることを確認（旧 v0.9.2 の「空前提」は廃止）。
+		# INC-4: v0.9.7 のデモスロット 2-4 は永続化導入と同時に削除（プレイヤーが Spell Builder で
+		# 自由に設定する初期状態）。スロット 1 のみ初期登録、2-5 は空。
+		# テスト独立性のため、永続セーブが残っている可能性を考慮してメモリだけ初期化してから確認。
+		lex_slot._reset_memory_only_for_test()
 		var slot2_default = lex_slot.get_spell_slot(2)
-		r.assert_eq(slot2_default.size(), 4, "v0.9.7: スロット 2 はデフォルトで vitt fram meida fjandi の 4 トークン")
-		if slot2_default.size() >= 1:
-			r.assert_eq(String(slot2_default[0].get("word_id", "")), "vitt", "v0.9.7: slot 2[0].word_id = vitt")
-		# スロット 5 は依然として未設定で空
+		r.assert_eq(slot2_default.size(), 0, "INC-4: スロット 2 は初期未設定で空（デモ呪文は v0.9.7 限定で廃止）")
 		var slot5_empty = lex_slot.get_spell_slot(5)
-		r.assert_eq(slot5_empty.size(), 0, "v0.9.7: スロット 5 は初期未設定で空（デモ呪文は 2-4 のみ）")
+		r.assert_eq(slot5_empty.size(), 0, "INC-4: スロット 5 は初期未設定で空")
 		# スロット 2 に設定（上書きが動作することを確認）
 		var new_tokens = [
 			{"word_id": "eldr", "case": ""},
@@ -1596,6 +1595,165 @@ func _ready() -> void:
 	))
 	r.assert_eq(ast_pr.get("ranges", []).size(), 1, "v0.9.5: Parser ranges=[naer]")
 	r.assert_eq(ast_pr.get("directions", []).size(), 1, "v0.9.5: Parser directions=[fram]")
+
+	# ============================================================================
+	# INC-4: Lexicon 永続化 / 戦闘学習 / 学習スポット / 碑文 / 巻き戻し差分
+	# ============================================================================
+	print("--- INC-4: 知識永続化と学習 3 経路 + 巻き戻し画面差分 ---")
+
+	var lex_inc4 := get_node("/root/Lexicon")
+	r.assert_not_null(lex_inc4, "INC-4: Lexicon autoload exists")
+	if lex_inc4 != null:
+		# 既存セーブの影響を消して clean state でテスト
+		lex_inc4.wipe_save()
+		lex_inc4._reset_memory_only_for_test()
+
+		# --- INC-4 A: add_comprehension の挙動 ---
+		var before_meida: int = int(lex_inc4.get_comprehension("meida"))
+		var gained_a: int = int(lex_inc4.add_comprehension("meida", 7))
+		r.assert_eq(gained_a, 7, "INC-4 A: add_comprehension は実際に伸びた量を返す")
+		r.assert_eq(lex_inc4.get_comprehension("meida"), before_meida + 7, "INC-4 A: get_comprehension が +7")
+		var gained_a2: int = int(lex_inc4.add_comprehension("meida", 200))
+		r.assert_true(gained_a2 < 200, "INC-4 A: 100 で clamp される（再加算 200 → < 200）")
+		r.assert_eq(lex_inc4.get_comprehension("meida"), 100, "INC-4 A: comprehension は 100 で clamp")
+		# 負やゼロはノーオペ
+		r.assert_eq(lex_inc4.add_comprehension("fjandi", 0), 0, "INC-4 A: amount=0 は no-op")
+		r.assert_eq(lex_inc4.add_comprehension("fjandi", -5), 0, "INC-4 A: amount<0 は no-op")
+		# 初回発見は stats.words_discovered++
+		var discov_before: int = int(lex_inc4.stats.get("words_discovered", 0))
+		lex_inc4.add_comprehension("eldr", 5)
+		r.assert_eq(int(lex_inc4.stats.get("words_discovered", 0)), discov_before + 1, "INC-4 A: 初回発見で stats.words_discovered++")
+
+		# --- INC-4 A: save_to_disk → メモリ消去 → load_from_disk ラウンドトリップ ---
+		lex_inc4.add_comprehension("fjandi", 22)
+		lex_inc4.grammar_progress["unlock_reason"] = "story+mastery"
+		lex_inc4.set_spell_slot(3, [{"word_id": "naer", "case": ""}, {"word_id": "meida", "case": ""}, {"word_id": "fjandi", "case": "acc"}])
+		lex_inc4.save_to_disk()
+		# メモリのみ消去（ディスクは保持）
+		lex_inc4._reset_memory_only_for_test()
+		r.assert_eq(lex_inc4.get_comprehension("meida"), 0, "INC-4 A: メモリ消去後は理解度ゼロ（ベースラインに戻る）")
+		var loaded_ok: bool = bool(lex_inc4.load_from_disk())
+		r.assert_true(loaded_ok, "INC-4 A: load_from_disk 成功")
+		r.assert_eq(lex_inc4.get_comprehension("meida"), 100, "INC-4 A: ロード後 meida=100 復元")
+		r.assert_eq(lex_inc4.get_comprehension("fjandi"), 22, "INC-4 A: ロード後 fjandi=22 復元")
+		r.assert_eq(String(lex_inc4.grammar_progress.get("unlock_reason", "")), "story+mastery", "INC-4 A: grammar_progress も復元")
+		var slot3_after_load: Array = lex_inc4.get_spell_slot(3)
+		r.assert_eq(slot3_after_load.size(), 3, "INC-4 A: spell_slots も復元")
+		if slot3_after_load.size() >= 1:
+			r.assert_eq(String(slot3_after_load[0].get("word_id", "")), "naer", "INC-4 A: spell_slot[3][0]=naer 復元")
+
+		# --- INC-4 C: loop_delta スナップショット ---
+		# wipe で baseline を取り直し、add_comprehension → snapshot_loop_delta
+		lex_inc4.wipe_save()
+		lex_inc4._reset_memory_only_for_test()
+		lex_inc4.add_comprehension("meida", 10)
+		lex_inc4.add_comprehension("fjandi", 5)
+		lex_inc4.snapshot_loop_delta()
+		var delta_c: Dictionary = lex_inc4.get_loop_delta()
+		r.assert_true(delta_c.has("meida"), "INC-4 C: loop_delta に meida")
+		r.assert_eq(int(delta_c["meida"]["gain"]), 10, "INC-4 C: meida gain=10")
+		r.assert_true(delta_c.has("fjandi"), "INC-4 C: loop_delta に fjandi")
+		# 伸びていない語は含まれない
+		r.assert_false(delta_c.has("eldr"), "INC-4 C: 伸びていない eldr は loop_delta に入らない")
+
+		# --- INC-4 C: reset_for_new_loop で stats.loops++ と delta クリア ---
+		var loops_before: int = int(lex_inc4.stats.get("loops", 0))
+		var rewinds_before: int = int(lex_inc4.stats.get("rewinds", 0))
+		lex_inc4.reset_for_new_loop("manual")
+		r.assert_eq(int(lex_inc4.stats.get("loops", 0)), loops_before + 1, "INC-4 C: reset_for_new_loop で loops++")
+		r.assert_eq(int(lex_inc4.stats.get("rewinds", 0)), rewinds_before + 1, "INC-4 C: rewind_reason 渡したら rewinds++")
+		# reason="" なら rewinds は増えない（Helgrind 踏破後の次ループ用）
+		var rew_now: int = int(lex_inc4.stats.get("rewinds", 0))
+		lex_inc4.reset_for_new_loop("")
+		r.assert_eq(int(lex_inc4.stats.get("rewinds", 0)), rew_now, "INC-4 C: reason='' なら rewinds++ しない")
+		# delta は新ループでクリア
+		var delta_after_reset: Dictionary = lex_inc4.get_loop_delta()
+		r.assert_eq(delta_after_reset.size(), 0, "INC-4 C: reset_for_new_loop で loop_delta クリア")
+		# baseline も再取得されているので、ここで add しても snapshot 前は delta 空
+		lex_inc4.add_comprehension("meida", 3)
+		# 直前は snapshot 取ってないので get_loop_delta は空のまま
+		r.assert_eq(lex_inc4.get_loop_delta().size(), 0, "INC-4 C: snapshot 前は get_loop_delta は空")
+		# snapshot 取ると新しい伸びだけが入る（meida は wipe 後 0 → +3 で gain=3）
+		lex_inc4.snapshot_loop_delta()
+		var d2: Dictionary = lex_inc4.get_loop_delta()
+		r.assert_true(d2.has("meida"), "INC-4 C: 2 回目 snapshot で meida 検出")
+		r.assert_eq(int(d2["meida"]["gain"]), 3, "INC-4 C: 2 回目 snapshot gain=3 (新ベースラインからの差分)")
+
+		# --- INC-4 A: helgrind_cleared フラグ ---
+		r.assert_false(bool(lex_inc4.stats.get("helgrind_cleared", false)), "INC-4 A: 初期は helgrind_cleared=false")
+		lex_inc4.mark_helgrind_cleared()
+		r.assert_true(bool(lex_inc4.stats.get("helgrind_cleared", false)), "INC-4 A: mark_helgrind_cleared() で true")
+
+		# 後片付け
+		lex_inc4.wipe_save()
+		lex_inc4._reset_memory_only_for_test()
+
+	# --- INC-4 B-2/B-3: FloorTemplate / DungeonGenerator / MapData / TileKind ---
+	var ft1_inc4: FloorTemplate = load("res://data/floors/helgrind_1.tres") as FloorTemplate
+	r.assert_not_null(ft1_inc4, "INC-4 B-2: helgrind_1.tres ロード")
+	if ft1_inc4 != null:
+		r.assert_true(ft1_inc4.study_spot_word_ids.size() > 0, "INC-4 B-2: helgrind_1 に study_spot_word_ids 設定済み")
+		r.assert_true(ft1_inc4.inscription_ids.size() > 0, "INC-4 B-3: helgrind_1 に inscription_ids 設定済み")
+
+	# study_spot.tres / inscription.tres が読める
+	var ss_tile: TileKind = load("res://data/tiles/study_spot.tres") as TileKind
+	r.assert_not_null(ss_tile, "INC-4 B-2: study_spot.tres ロード")
+	if ss_tile != null:
+		r.assert_eq(ss_tile.id, "study_spot", "INC-4 B-2: study_spot.id")
+		r.assert_true(ss_tile.passable, "INC-4 B-2: study_spot passable=true")
+		r.assert_true(ss_tile.interactable, "INC-4 B-2: study_spot interactable=true")
+		r.assert_eq(ss_tile.validate().size(), 0, "INC-4 B-2: study_spot validate() pass")
+	var ins_tile: TileKind = load("res://data/tiles/inscription.tres") as TileKind
+	r.assert_not_null(ins_tile, "INC-4 B-3: inscription.tres ロード")
+	if ins_tile != null:
+		r.assert_eq(ins_tile.id, "inscription", "INC-4 B-3: inscription.id")
+		r.assert_true(ins_tile.passable, "INC-4 B-3: inscription passable=true")
+		r.assert_eq(ins_tile.validate().size(), 0, "INC-4 B-3: inscription validate() pass")
+
+	# InscriptionResource ロード & validate（型は autoload class_name の認識タイミングを避けて dynamic に）
+	var insc_meida: Resource = load("res://data/inscriptions/insc_intro_meida.tres") as Resource
+	r.assert_not_null(insc_meida, "INC-4 B-3: insc_intro_meida.tres ロード")
+	if insc_meida != null:
+		r.assert_eq(String(insc_meida.get("id")), "insc_intro_meida", "INC-4 B-3: id")
+		r.assert_eq(String(insc_meida.get("difficulty")), "intro", "INC-4 B-3: difficulty=intro")
+		var insc_answers: PackedStringArray = PackedStringArray(insc_meida.get("answer_word_ids"))
+		r.assert_true(insc_answers.size() > 0, "INC-4 B-3: answer_word_ids 非空")
+		var insc_errors: PackedStringArray = insc_meida.call("validate") as PackedStringArray
+		r.assert_eq(insc_errors.size(), 0, "INC-4 B-3: validate pass")
+
+	# DungeonGenerator が study_spot / inscription を配置する
+	var ms_inc4 := get_node("/root/MapState")
+	if ms_inc4 != null and ft1_inc4 != null:
+		ms_inc4.load_floor(ft1_inc4, DSEED.new(40404, 0, 1))
+		var md_inc4 = ms_inc4.map_data
+		r.assert_not_null(md_inc4, "INC-4: load_floor 後の map_data")
+		# 配置数 == count レンジ内（rng 依存だが、word_ids 非空かつ通常部屋がある前提で 1+ 個は期待）
+		r.assert_true(md_inc4.study_spots.size() >= 1, "INC-4 B-2: study_spots が 1 個以上配置 (helgrind_1 count[1,2])")
+		r.assert_true(md_inc4.inscriptions.size() >= 1, "INC-4 B-3: inscriptions が 1 個以上配置 (helgrind_1 count[1,1])")
+		# 配置位置のタイルが study_spot / inscription になっている
+		for s in md_inc4.study_spots:
+			var sp_pos: Vector2i = Vector2i(s["pos"])
+			r.assert_eq(md_inc4.get_tile(sp_pos), "study_spot", "INC-4 B-2: 配置タイルが study_spot")
+			r.assert_true(md_inc4.is_passable(sp_pos), "INC-4 B-2: study_spot は passable")
+		for ins in md_inc4.inscriptions:
+			var ins_pos: Vector2i = Vector2i(ins["pos"])
+			r.assert_eq(md_inc4.get_tile(ins_pos), "inscription", "INC-4 B-3: 配置タイルが inscription")
+			r.assert_true(md_inc4.is_passable(ins_pos), "INC-4 B-3: inscription は passable")
+			# inscription_id が word_ids リスト中
+			r.assert_true(String(ins.get("inscription_id", "")) in ft1_inc4.inscription_ids,
+				"INC-4 B-3: inscription_id は FloorTemplate.inscription_ids 由来")
+		# study_spot_at / inscription_at lookup
+		if md_inc4.study_spots.size() > 0:
+			var first_ss: Dictionary = md_inc4.study_spots[0]
+			var lookup_ss: Dictionary = md_inc4.study_spot_at(Vector2i(first_ss["pos"]))
+			r.assert_eq(String(lookup_ss.get("word_id", "")), String(first_ss.get("word_id", "")),
+				"INC-4 B-2: study_spot_at lookup")
+		ms_inc4.reset()
+		GameState.reset()
+
+	# TileKind.VALID_IDS に study_spot / inscription が含まれる
+	r.assert_true("study_spot" in TileKind.VALID_IDS, "INC-4 B-2: TileKind.VALID_IDS に study_spot")
+	r.assert_true("inscription" in TileKind.VALID_IDS, "INC-4 B-3: TileKind.VALID_IDS に inscription")
 
 	r.print_summary()
 

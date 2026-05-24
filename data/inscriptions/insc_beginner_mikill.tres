@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="InscriptionResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/inscriptions/inscription_resource.gd" id="1_insc"]
+
+[resource]
+script = ExtResource("1_insc")
+id = "insc_beginner_mikill"
+difficulty = "beginner"
+runes = "ᛘᛁᚴᛁᛚᛚ"
+prompt_ja = "この碑文の意味は？「大いなる／強大な」を表す古ノルド語形容詞は？"
+answer_word_ids = PackedStringArray("mikill")
+choices_word_ids = PackedStringArray("litill", "fjarri", "vitt")
+comprehension_gain = [{"word_id": "mikill", "amount": 18}]
+time_cost = 1.5
+source = "オリジナル / Zoëga"
+verified = false

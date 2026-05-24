@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="InscriptionResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/inscriptions/inscription_resource.gd" id="1_insc"]
+
+[resource]
+script = ExtResource("1_insc")
+id = "insc_intro_meida"
+difficulty = "intro"
+runes = "ᛘᛅᛁᚦᛅ"
+prompt_ja = "この碑文の意味は？「傷つける／打つ」を表す古ノルド語動詞は？"
+answer_word_ids = PackedStringArray("meida")
+choices_word_ids = PackedStringArray("fjandi", "sjalfr", "eldr")
+comprehension_gain = [{"word_id": "meida", "amount": 15}]
+time_cost = 1.0
+source = "オリジナル / Zoëga"
+verified = false

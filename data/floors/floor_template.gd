@@ -30,6 +30,15 @@ class_name FloorTemplate
 ## タイムリミット参照（01 §3.5、09 §4.2）
 @export var time_budget_hint_days: float = 1.0
 
+## INC-4 B-2: 学習スポットの配置。階あたり N 個（min, max）。各スポットの対象語は
+## study_spot_word_ids からランダムに選ばれる。空なら何も置かない。
+@export var study_spot_count: Vector2i = Vector2i(0, 1)
+@export var study_spot_word_ids: PackedStringArray = PackedStringArray()
+
+## INC-4 B-3: 碑文タイルの配置。各碑文の id は inscription_ids からランダムに選ばれる。
+@export var inscription_count: Vector2i = Vector2i(0, 1)
+@export var inscription_ids: PackedStringArray = PackedStringArray()
+
 @export var source: String = "オリジナル"
 @export var verified: bool = true
 
