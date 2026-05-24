@@ -4,7 +4,7 @@
 |------|------|
 | エンジン | Godot 4.x（GDScript 主体。重い処理のみ後で最適化） |
 | 役割 | 実装エージェントが従うプロジェクト構造・設計規約 |
-| ステータス | Draft v0.6 |
+| ステータス | Draft v0.7 |
 
 ## 更新履歴
 - v0.1 初版
@@ -13,6 +13,7 @@
 - v0.4 項目5確定を反映：SpellComposer に補助段階（scaffold_level）の責務を明記（補助はUI層のみ・Validator/G非関与・未解禁構文は非表示）。`Lexicon` 永続に `grammar_progress` を追加（D7恒久）
 - v0.5 項目10確定を反映：設計方針に i18n（INC-0外部化・JA先行・ENリリース必須）とフォント全字カバー制約を追加。SpellComposer にロケール別グロス表示／カナ副ラベル／無辞書で発音非表示／発音は非メカニクスを明記
 - **v0.6 マス目移動・グリッド戦術導入の大改訂**（2026-05-23 ユーザー判断、`01 v0.9` / `02 v0.9` / `03 v0.18` / 新規 `09` と一体）。`core/map/` レイヤを新規追加（dungeon_generator / map_data / tile_grid / pathfinder）。`core/spell/spatial_resolver.gd` を新規追加（範囲語・方向語から対象タイル集合 T を計算、INC-3.5 で本格化）。autoload に `MapState`（現階層・プレイヤー位置・向き）を追加。EventBus に新規シグナル（enemy_in_sight / player_moved / floor_changed）。シーン構成は `run/combat.tscn` を廃止し `scenes/dungeon/dungeon_view.tscn` に統合（シームレス型）。SpellComposer に射程プレビュー責務を追加（scaffold=max でタイルハイライト・方向矢印・AoE 範囲）
+- **v0.7 INC-3.5 完了後の磨き上げ**（2026-05-24）。§2 ツリーから `scenes/combat/combat_test.tscn` 廃止（dungeon_view に役割統合、二重保守解消）。`tests/scenarios/combat/` も同時廃止。§5 主要シーン表を更新
 
 ---
 
@@ -74,7 +75,8 @@ res://
 └── tests/               # GUT 等での単体テスト
 ```
 
-> **v0.6 重要変更**: 旧 v0.2 で追加した `scenes/run/combat.tscn`（コマンド入力型ターン制の独立シーン）は**廃止**。シームレス型では探索と戦闘が同一シーン `scenes/dungeon/dungeon_view.tscn` に統合される（`09 §6.1` の「警戒モード/平時モード」は UI 層の前景/後景の切替えで表現）。`combat_test.tscn`（INC-2 デバッグ用）は INC-3.5 まで残し、grid-aware バージョンの試作場として再利用する。
+> **v0.6 重要変更**: 旧 v0.2 で追加した `scenes/run/combat.tscn`（コマンド入力型ターン制の独立シーン）は**廃止**。シームレス型では探索と戦闘が同一シーン `scenes/dungeon/dungeon_view.tscn` に統合される（`09 §6.1` の「警戒モード/平時モード」は UI 層の前景/後景の切替えで表現）。
+> **v0.9.7 追記**: `combat_test.tscn`（INC-2 デバッグ用）は INC-3.5 完了をもって役割を終え、**廃止**。dungeon_view が grid-aware の戦闘検証も兼ねるため、二重保守を避ける。CombatSystem / DamageCalculator のロジックは `tests/test_smoke.gd` の統合 E2E テスト（INC-2 v0.4 由来）で継続検証。
 
 ---
 
@@ -135,7 +137,7 @@ func cast(word_ids: Array[String], ruleset: GrammarRuleset, spatial_context: Spa
 | `ui/lexicon_screen.tscn` | 語彙閲覧・集中学習（時間消費） | Lexicon, GameState |
 | `ui/hud.tscn` | HP・タイムリミット残量・現手番・**現在地・既知マップ縮小表示**（v0.6）の常時可視化 | GameState, MapState |
 | `debug/spell_lab.tscn` | **INC-1専用**: 語入力→判定/威力/ばらつき/暴発率を可視化（戦闘なし） | SpellEngine |
-| `combat_test.tscn` | **INC-2 デバッグ**: 単一フロア戦闘テスト。v0.6 で `dungeon_view.tscn` と分離維持し、grid-aware バージョン試作場として INC-3.5 まで残す | SpellEngine, CombatSystem |
+| ~~`combat_test.tscn`~~ | **v0.9.7 で廃止**。INC-2 デバッグ用だったが INC-3.5 完了をもって dungeon_view に役割統合。CombatSystem/DamageCalculator は test_smoke の E2E で継続検証 | – |
 
 > **v0.6 廃止**: 旧 v0.2 の `run/floor.tscn` および `run/combat.tscn` は `dungeon/dungeon_view.tscn` に統合（シームレス型）。`scenes/run/` には `run.tscn`（ループ統括）のみが残る。
 

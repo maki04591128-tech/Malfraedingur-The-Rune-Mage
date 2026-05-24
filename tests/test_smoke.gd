@@ -1155,10 +1155,16 @@ func _ready() -> void:
 		if slot1.size() >= 2:
 			r.assert_eq(String(slot1[0].get("word_id", "")), "meida", "v0.9.2: slot 1[0].word_id = meida")
 			r.assert_eq(String(slot1[1].get("word_id", "")), "fjandi", "v0.9.2: slot 1[1].word_id = fjandi")
-		# スロット 2 は未設定で空
-		var slot2_empty = lex_slot.get_spell_slot(2)
-		r.assert_eq(slot2_empty.size(), 0, "v0.9.2: スロット 2 は初期未設定で空")
-		# スロット 2 に設定
+		# v0.9.7: スロット 2-4 は INC-3.5 プレビュー UI 検証用にデモ呪文が初期登録される。
+		# 初期値が「空」ではなく特定の呪文であることを確認（旧 v0.9.2 の「空前提」は廃止）。
+		var slot2_default = lex_slot.get_spell_slot(2)
+		r.assert_eq(slot2_default.size(), 4, "v0.9.7: スロット 2 はデフォルトで vitt fram meida fjandi の 4 トークン")
+		if slot2_default.size() >= 1:
+			r.assert_eq(String(slot2_default[0].get("word_id", "")), "vitt", "v0.9.7: slot 2[0].word_id = vitt")
+		# スロット 5 は依然として未設定で空
+		var slot5_empty = lex_slot.get_spell_slot(5)
+		r.assert_eq(slot5_empty.size(), 0, "v0.9.7: スロット 5 は初期未設定で空（デモ呪文は 2-4 のみ）")
+		# スロット 2 に設定（上書きが動作することを確認）
 		var new_tokens = [
 			{"word_id": "eldr", "case": ""},
 			{"word_id": "meida", "case": ""},

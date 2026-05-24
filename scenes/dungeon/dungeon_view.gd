@@ -50,6 +50,11 @@ var enemy_db: Dictionary = {}            ## { "draugr_lesser": EnemyResource, ..
 var rng_master_seed: int = 0             ## 巻き戻しでシフトしていく
 var current_floor_template = null
 
+## INC-3.5 v0.9.7: scaffold=max のプレビュー対象スロット（Tab で切替）。
+## キー 1-5 を押せばこのスロットに関係なくそのスロットが詠唱される。
+## プレビューに表示する射程・AoE・貫通だけがこの値で切り替わる（HUD にも表示）。
+var _active_preview_slot: int = 1
+
 var hud_label: Label = null
 var combat_log_label: RichTextLabel = null
 var game_over: bool = false
@@ -272,13 +277,29 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 
 	# v0.9.3: 移動/旋回/詠唱/待機は _process で polling 処理（長押し連続）。
-	# 単発の F (ウィンドウ開く) / Enter (階段) のみここで処理。
+	# 単発の F (ウィンドウ開く) / Enter (階段) / Tab (プレビュースロット切替) のみここで処理。
 	# v0.9.4: INC-3 検証用 DEBUG キー H/T/G は削除（INC-3 検証完了済み、INC-3.5 では不要）。
+	# v0.9.7: Tab で _active_preview_slot を 1→2→3→4→5→1 で巡回切替。詠唱発火はしない、
+	#         スロットキー (1-5) は従来通り独立に詠唱を打つ。
 	match event.keycode:
 		KEY_F:
 			_open_spell_builder_modal()
 		KEY_ENTER:
 			_try_descend_stairs()
+		KEY_TAB:
+			_cycle_preview_slot()
+
+
+## v0.9.7: Tab で次のスロットをプレビュー対象に。Lexicon に登録のないスロットも巡回するが、
+## 巡回しすぎないよう全空ならスロット 1 に戻す。
+func _cycle_preview_slot() -> void:
+	for _try in 5:
+		_active_preview_slot = (_active_preview_slot % 5) + 1
+		if not Lexicon.get_spell_slot(_active_preview_slot).is_empty():
+			break
+	_log("[color=#8cf]🎯 プレビュー: スロット %d[/color]" % _active_preview_slot)
+	_update_hud()
+	queue_redraw()
 
 
 func _player_action_move(dx: int, dy: int) -> void:
@@ -306,6 +327,11 @@ func _player_action_turn(direction: int) -> void:
 ## スロット 1-5 から Lexicon._spell_slots のトークン列を取得して即詠唱。
 ## スロット 1 はデフォルトで meida fjanda、F キーで作成した呪文を 2-5 にも割当可能。
 ## 対象は SpatialResolver が向き±45° 扇内の最近敵を自動選択（要求 2）。
+## v0.9.7: scaffold=max 事前ブロック (09 §9)。詠唱前に Validator/SpatialResolver を
+##   ドライランし、direction_required が立つ呪文（vítt 単独など）は世界時間を消費せず警告のみ。
+##   ※コアジレンマを壊さないため、自爆系暴発や case_agreement 違反は事前ブロックしない（実プレイヤーの
+##     学習機会を残す）。direction_required は「対象タイル T が確定しない＝詠唱不可」が仕様 (09 §7.3)
+##     なので事前ブロックする。
 func _cast_slot(slot: int) -> void:
 	var tokens_in: Array = Lexicon.get_spell_slot(slot)
 	if tokens_in.is_empty():
@@ -313,6 +339,12 @@ func _cast_slot(slot: int) -> void:
 		return
 	var ruleset: Resource = load("res://data/grammar/phase_intermediate.tres")
 	var spatial_ctx = SPATIAL_CONTEXT.from_map_state(MapState)
+	# === v0.9.7 事前ブロック: direction_required を Validator で先に検出 ===
+	if _is_direction_required_blocked(tokens_in, ruleset):
+		_log("[color=#fd0]⚠ スロット %d: 方向語が必要です（vítt / í gegnum に fram / aptr / vinstri / hœgri を加える）— 詠唱を中止[/color]" % slot)
+		# 世界時間を消費せず・敵ターンも回さない（タイプミス相当の親切な扱い）
+		return
+
 	var result: CastResult = SpellEngine.cast(tokens_in, ruleset, {
 		"spatial_context": spatial_ctx,
 	})
@@ -328,6 +360,21 @@ func _cast_slot(slot: int) -> void:
 	_enemies_take_turn()
 	queue_redraw()
 	_update_hud()
+
+
+## v0.9.7: 詠唱前ドライラン。direction_required が立てば true を返す。
+## Validator のみで完結（コア違反扱いの構造的判定）、SpatialResolver は呼ばない。
+func _is_direction_required_blocked(tokens_in: Array, ruleset: Resource) -> bool:
+	var word_lookup: Callable = Callable(Lexicon, "get_word") if Lexicon.has_method("get_word") else Callable()
+	var tokens: Array = SpellTokenizer.tokenize(tokens_in, ruleset, word_lookup)
+	var ast: Dictionary = SpellParser.parse(tokens)
+	var report: GrammarReport = SpellValidator.validate(ast, ruleset)
+	if report == null:
+		return false
+	for f in report.failures():
+		if String(f.get("rule", "")) == "direction_required":
+			return true
+	return false
 
 
 ## INC-3 v0.9.2 (要求 3): 待機 + HP+1 回復。1 ターン消費 + 世界時間 Δ=1.0。
@@ -524,12 +571,12 @@ func _draw() -> void:
 	var arrow_end := p_center + arrow_vec * (TILE_SIZE / 2.0 - 2)
 	draw_line(p_center, arrow_end, Color(0.15, 0.10, 0.05), 2.0)
 
-	# === INC-3.5 v0.9.5: scaffold=max 射程プレビュー UI (09 §9) ===
-	# スロット 1 の呪文を「これから撃つ予定」として SpatialResolver でドライランし、
+	# === INC-3.5 v0.9.5 (v0.9.7 でアクティブスロット切替対応): scaffold=max 射程プレビュー UI (09 §9) ===
+	# `_active_preview_slot` (Tab で 1→2→3→4→5 巡回) の呪文を SpatialResolver でドライランし、
 	# 対象タイル/AoE/貫通/range_required をマップ上に描画する。
 	# game_over 中や別ウィンドウ展開中は省略（ノイズ低減）。
 	if not game_over and spell_builder_window == null:
-		_draw_preview_for_slot(1, origin)
+		_draw_preview_for_slot(_active_preview_slot, origin)
 
 
 ## INC-3.5 v0.9.5: スロットの呪文を SpatialResolver でドライランして射程プレビューを描く。
@@ -638,8 +685,14 @@ func _update_hud() -> void:
 	var facing_str: String = facing_names[MapState.player_facing]
 	var in_sight: int = MapState.enemies_in_sight().size()
 	var mode: String = "[警戒]" if in_sight > 0 else "[平時]"
-	hud_label.text = "%s | 位置 %s 向き %s | 視界内 %d 体 %s\nWASD/矢印=移動(長押し可・WA等同時押しで斜め8方向)  Q/E=旋回  1-5=スロット詠唱(±45°扇)  Space=待機+HP回復  F=Spell Builder ウィンドウ  Enter=階段" % [
-		status, pos_str, facing_str, in_sight, mode
+	# v0.9.7: アクティブスロットと呪文プレビューを HUD に表示
+	var preview_tokens: Array = Lexicon.get_spell_slot(_active_preview_slot)
+	var preview_words: Array = []
+	for t in preview_tokens:
+		preview_words.append(String(t.get("word_id", "?")))
+	var preview_str: String = "(空)" if preview_words.is_empty() else " ".join(preview_words)
+	hud_label.text = "%s | 位置 %s 向き %s | 視界内 %d 体 %s | プレビュー: スロット %d [%s]\nWASD/矢印=移動(長押し可・斜め8方向)  Q/E=旋回  1-5=スロット詠唱(±45°扇)  Space=待機+HP回復  Tab=プレビュー切替  F=Spell Builder  Enter=階段" % [
+		status, pos_str, facing_str, in_sight, mode, _active_preview_slot, preview_str
 	]
 	_render_log()
 

@@ -34,9 +34,30 @@ var _comprehension: Dictionary = {}
 ## SaveData の grammar_progress と同じ「知識側」扱いで、ループ巻き戻し非対象（D7 と同思想）。
 ## 永続化は INC-4 で user://lexicon.save に統合予定。INC-3 v0.9.2 はメモリ保持のみ。
 ## デフォルト: スロット 1 = meida + fjandi(acc)（INC-3 既定詠唱、F で上書き可能）。
+## v0.9.7: スロット 2-4 にも INC-3.5 の範囲・方向語デモ呪文を初期登録（実機検証時にプレビュー UI を
+##   すぐ見られるように）。INC-4 で `user://lexicon.save` 永続化を実装したら、初期化は別関数に移す予定。
 var _spell_slots: Dictionary = {
 	1: [
 		{"word_id": "meida", "case": ""},
+		{"word_id": "fjandi", "case": "acc"},
+	],
+	2: [
+		{"word_id": "vitt",   "case": ""},
+		{"word_id": "fram",   "case": ""},
+		{"word_id": "meida",  "case": ""},
+		{"word_id": "fjandi", "case": "acc"},
+	],
+	3: [
+		{"word_id": "i_gegnum", "case": ""},
+		{"word_id": "fram",     "case": ""},
+		{"word_id": "meida",    "case": ""},
+		{"word_id": "fjandi",   "case": "acc"},
+	],
+	4: [
+		# direction_required の事前ブロックを確認するための「不正な呪文」
+		# vítt 単独 → 方向未指定で詠唱不可（v0.9.7 で事前ブロック）
+		{"word_id": "vitt",   "case": ""},
+		{"word_id": "meida",  "case": ""},
 		{"word_id": "fjandi", "case": "acc"},
 	],
 }
