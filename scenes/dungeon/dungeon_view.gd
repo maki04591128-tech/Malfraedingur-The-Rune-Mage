@@ -63,10 +63,18 @@ var spell_builder_window: Window = null   ## F キーで開く spell_builder の
 # INC-3 v0.9.2 (要求 1): 移動キー長押しのリピート制御。
 # OS のキーリピート echo は Godot 4 で安定しないため、_process で polling する方式に変更。
 # v0.9.3 (要求 6/7): Space/1-5/Q/E も polling、WASD 同時押しで斜め移動
-const MOVE_REPEAT_DELAY := 0.12   ## 秒。連続移動の間隔
-const ACTION_REPEAT_DELAY := 0.30  ## 秒。詠唱・旋回・待機の連続発動間隔（移動より長く誤連打防止）
+# v0.9.6: OS キーリピートと同じ「立ち上がりで 1 発 → INITIAL_DELAY 待機 → 連続リピート」の
+#         2 段階方式に変更。タップ 1 回で意図せず連続入力に乗ってしまう挙動を解消。
+const MOVE_REPEAT_DELAY := 0.12     ## 秒。連続移動の間隔（連続リピート期）
+const ACTION_REPEAT_DELAY := 0.30   ## 秒。詠唱・旋回・待機の連続発動間隔（連続リピート期）
+const INITIAL_REPEAT_DELAY := 0.20  ## 秒。タップ後、連続リピート期に入るまでの待ち（v0.9.6）
 var _move_cooldown: float = 0.0
 var _action_cooldown: float = 0.0
+# v0.9.6: 立ち上がり検出用。前フレームに押されていたか。
+# 移動は方向別ではなく「いずれかの移動キーが押されている」かどうかでまとめる（斜め移動の方向変化で勝手にエッジが立たないように）。
+var _move_was_pressed: bool = false
+# アクションは押されたキーごとに独立追跡する（Q 押した直後に E 押し直し、などに対応）。
+var _action_keys_was_pressed: Dictionary = {}  # key (int) → bool
 
 
 func _ready() -> void:
@@ -166,58 +174,87 @@ func _input(_event: InputEvent) -> void:
 ## v0.9.3 拡張:
 ##   - 要求 6: Space/1-5/Q/E も polling、 ACTION_REPEAT_DELAY で連続発動
 ##   - 要求 7: WASD 上下と左右を独立判定 → 同時押しで斜め移動 (8 方向)
+## v0.9.6: タップ 1 回で連続入力に入ってしまうのを防ぐ「2 段階リピート」方式。
+##   立ち上がり検出 (押されていない → 押されている) で 1 回実行 + cooldown を INITIAL_REPEAT_DELAY に。
+##   200ms 経過後もキーが押し続けられていれば連続リピート期に入り、以降は MOVE/ACTION_REPEAT_DELAY 周期で発動。
 func _process(delta: float) -> void:
 	if game_over or spell_builder_window != null:
 		return
 	_move_cooldown = max(0.0, _move_cooldown - delta)
 	_action_cooldown = max(0.0, _action_cooldown - delta)
 
-	# --- 移動 (8 方向化、要求 7) ---
-	if _move_cooldown <= 0.0:
-		var dx: int = 0
-		var dy: int = 0
-		# 上下は独立に取得（同時押しで斜め移動）
-		if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
-			dy = -1
-		elif Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
-			dy = 1
-		if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
-			dx = -1
-		elif Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
-			dx = 1
-		if dx != 0 or dy != 0:
+	# --- 移動 (8 方向化、要求 7 + v0.9.6 二段階リピート) ---
+	var dx: int = 0
+	var dy: int = 0
+	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
+		dy = -1
+	elif Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
+		dy = 1
+	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
+		dx = -1
+	elif Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
+		dx = 1
+	var move_pressed_now: bool = (dx != 0 or dy != 0)
+	if move_pressed_now:
+		if not _move_was_pressed:
+			# 立ち上がり: 1 回実行 + 連続リピート期に入るまで INITIAL_REPEAT_DELAY 待つ
+			_player_action_move(dx, dy)
+			_move_cooldown = INITIAL_REPEAT_DELAY
+		elif _move_cooldown <= 0.0:
+			# 既に長押し中 + cooldown 経過 → 連続リピート期
 			_player_action_move(dx, dy)
 			_move_cooldown = MOVE_REPEAT_DELAY
+	else:
+		# 全部離された → 次の立ち上がりに備えて cooldown リセット
+		_move_cooldown = 0.0
+	_move_was_pressed = move_pressed_now
 
-	# --- 非移動アクション (要求 6: 長押し連続) ---
-	if _action_cooldown <= 0.0:
-		# 旋回 Q / E
-		if Input.is_key_pressed(KEY_Q):
-			_player_action_turn(-1)
-			_action_cooldown = ACTION_REPEAT_DELAY
-		elif Input.is_key_pressed(KEY_E):
-			_player_action_turn(1)
-			_action_cooldown = ACTION_REPEAT_DELAY
-		# 待機 + HP+1
-		elif Input.is_key_pressed(KEY_SPACE):
-			_player_action_wait_and_heal()
-			_action_cooldown = ACTION_REPEAT_DELAY
-		# スロット 1-5 詠唱
-		elif Input.is_key_pressed(KEY_1):
-			_cast_slot(1)
-			_action_cooldown = ACTION_REPEAT_DELAY
-		elif Input.is_key_pressed(KEY_2):
-			_cast_slot(2)
-			_action_cooldown = ACTION_REPEAT_DELAY
-		elif Input.is_key_pressed(KEY_3):
-			_cast_slot(3)
-			_action_cooldown = ACTION_REPEAT_DELAY
-		elif Input.is_key_pressed(KEY_4):
-			_cast_slot(4)
-			_action_cooldown = ACTION_REPEAT_DELAY
-		elif Input.is_key_pressed(KEY_5):
-			_cast_slot(5)
-			_action_cooldown = ACTION_REPEAT_DELAY
+	# --- 非移動アクション (要求 6 + v0.9.6 二段階リピート、キーごとに独立追跡) ---
+	# 候補キーと対応アクションを 1 つの table にまとめて処理
+	var action_keys: Array = [
+		[KEY_Q,     "_turn_ccw"],
+		[KEY_E,     "_turn_cw"],
+		[KEY_SPACE, "_wait_heal"],
+		[KEY_1,     "_slot1"],
+		[KEY_2,     "_slot2"],
+		[KEY_3,     "_slot3"],
+		[KEY_4,     "_slot4"],
+		[KEY_5,     "_slot5"],
+	]
+	# 立ち上がり検出（押された瞬間）を全アクションキーで一括チェック
+	var any_action_just_pressed: bool = false
+	for entry in action_keys:
+		var k: int = entry[0]
+		var pressed: bool = Input.is_key_pressed(k)
+		var was: bool = bool(_action_keys_was_pressed.get(k, false))
+		if pressed and not was:
+			# 立ち上がり → 即実行 + INITIAL_REPEAT_DELAY 待ち
+			_dispatch_action(String(entry[1]))
+			_action_cooldown = INITIAL_REPEAT_DELAY
+			any_action_just_pressed = true
+		_action_keys_was_pressed[k] = pressed
+
+	# 連続リピート期: 立ち上がり処理を行わなかった場合のみ、長押し中キーで cooldown 経過したら再発動
+	if not any_action_just_pressed and _action_cooldown <= 0.0:
+		for entry in action_keys:
+			var k: int = entry[0]
+			if Input.is_key_pressed(k):
+				_dispatch_action(String(entry[1]))
+				_action_cooldown = ACTION_REPEAT_DELAY
+				break  # 同時押し時は table 上位のものだけ発動（旧挙動と整合）
+
+
+## v0.9.6: action 種別 → 実行関数のディスパッチ。`_process()` をスッキリさせるため抽出。
+func _dispatch_action(name: String) -> void:
+	match name:
+		"_turn_ccw":  _player_action_turn(-1)
+		"_turn_cw":   _player_action_turn(1)
+		"_wait_heal": _player_action_wait_and_heal()
+		"_slot1":     _cast_slot(1)
+		"_slot2":     _cast_slot(2)
+		"_slot3":     _cast_slot(3)
+		"_slot4":     _cast_slot(4)
+		"_slot5":     _cast_slot(5)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
