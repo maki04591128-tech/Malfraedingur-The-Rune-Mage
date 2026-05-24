@@ -62,6 +62,12 @@ var stats: Dictionary = {
 	"helgrind_cleared": false,
 }
 
+## INC-4 残課題: 無辞書（碑文）モード (01 §3.7 / 09 §9)。
+##   true: 辞書ヒントを封じ、テキスト入力経路で詠唱。scaffold_level=none + 最厳 ruleset 強制。
+##   false: 通常モード（タイル経路、scaffold は ruleset の指定通り）。
+## 永続化対象（プレイヤーの選好）。
+var freetext_mode: bool = false
+
 ## 魔法スロット (INC-3 v0.9.2 新規)。永続化対象（知識側＝巻き戻し非対象）。
 ## デフォルト: スロット 1 = meida + fjanda (acc) のみ。INC-3.5 v0.9.7 のデモスロット 2-4 は
 ## INC-4 で永続化と同時に削除（プレイヤーが Spell Builder で自由に設定する）。
@@ -240,6 +246,7 @@ func save_to_disk() -> void:
 		"grammar_progress": grammar_progress.duplicate(true),
 		"stats": stats.duplicate(true),
 		"spell_slots": {},
+		"freetext_mode": freetext_mode,
 	}
 	for word_id in _comprehension.keys():
 		data["lexicon"][word_id] = {"comprehension": int(_comprehension[word_id])}
@@ -308,6 +315,9 @@ func load_from_disk() -> bool:
 			if slot_num >= 1 and slot_num <= 5 and typeof(tokens) == TYPE_ARRAY:
 				_spell_slots[slot_num] = tokens.duplicate(true)
 
+	# freetext_mode
+	freetext_mode = bool(data.get("freetext_mode", false))
+
 	return true
 
 
@@ -330,6 +340,7 @@ func wipe_save() -> void:
 			{"word_id": "fjandi", "case": "acc"},
 		],
 	}
+	freetext_mode = false
 	_snapshot_loop_baseline()
 
 
@@ -348,4 +359,5 @@ func _reset_memory_only_for_test() -> void:
 			{"word_id": "fjandi", "case": "acc"},
 		],
 	}
+	freetext_mode = false
 	_snapshot_loop_baseline()

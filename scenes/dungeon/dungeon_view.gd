@@ -80,6 +80,10 @@ var rewind_overlay_active: bool = false
 var rewind_overlay_container: Control = null
 var _last_rewind_reason: String = ""
 
+## INC-4 残課題: 無辞書モード (freetext) のテキスト入力ウィンドウ。
+var freetext_modal_window: Window = null
+var _freetext_line_edit: LineEdit = null
+
 # INC-3 v0.9.2 (要求 1): 移動キー長押しのリピート制御。
 # OS のキーリピート echo は Godot 4 で安定しないため、_process で polling する方式に変更。
 # v0.9.3 (要求 6/7): Space/1-5/Q/E も polling、WASD 同時押しで斜め移動
@@ -207,7 +211,7 @@ func _input(_event: InputEvent) -> void:
 ##   立ち上がり検出 (押されていない → 押されている) で 1 回実行 + cooldown を INITIAL_REPEAT_DELAY に。
 ##   200ms 経過後もキーが押し続けられていれば連続リピート期に入り、以降は MOVE/ACTION_REPEAT_DELAY 周期で発動。
 func _process(delta: float) -> void:
-	if game_over or spell_builder_window != null:
+	if game_over or spell_builder_window != null or freetext_modal_window != null or inscription_modal_window != null:
 		return
 	_move_cooldown = max(0.0, _move_cooldown - delta)
 	_action_cooldown = max(0.0, _action_cooldown - delta)
@@ -300,6 +304,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	# 別ウィンドウ表示中はキー無視（ウィンドウ側でフォーカス処理）
 	if spell_builder_window != null:
 		return
+	if freetext_modal_window != null:
+		return
+	if inscription_modal_window != null:
+		return
 
 	# v0.9.3: 移動/旋回/詠唱/待機は _process で polling 処理（長押し連続）。
 	# 単発の F (ウィンドウ開く) / Enter (階段 or 学習 or 碑文) / Tab (プレビュー切替) /
@@ -318,6 +326,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_cycle_preview_slot()
 		KEY_R:
 			_request_manual_rewind()
+		KEY_F2:
+			_toggle_freetext_mode()
+		KEY_T:
+			_open_freetext_modal()
 
 
 ## v0.9.7: Tab で次のスロットをプレビュー対象に。Lexicon に登録のないスロットも巡回するが、
@@ -872,6 +884,132 @@ func _request_manual_rewind() -> void:
 	_trigger_rewind("manual")
 
 
+# ============================================================================
+#  INC-4 残課題: 無辞書（碑文）モード (01 §3.7 / 03 §6.1 / 09 §9)
+# ============================================================================
+
+## F2 キー: 無辞書モードの ON/OFF をトグル（永続化）。
+## ON のとき: T キーで freetext テキスト入力詠唱、ruleset は phase_advanced (scaffold=none) で最厳。
+## OFF のとき: 通常のスロット詠唱 + tile UI。
+func _toggle_freetext_mode() -> void:
+	Lexicon.freetext_mode = not Lexicon.freetext_mode
+	Lexicon.save_to_disk()
+	var state_label: String = "ON (最厳・補助なし)" if Lexicon.freetext_mode else "OFF (通常モード)"
+	_log("[color=#fc8]🔠 無辞書モード: %s[/color]" % state_label)
+	_update_hud()
+
+
+## T キー: 無辞書詠唱のテキスト入力モーダルを開く。
+## 入力形式: `word_id` または `word_id:case` を空白区切り（例: `meida fjandi:acc`）。
+## Submit で SpellTokenizer.tokenize_freetext → SpellEngine.cast。
+## freetext_mode=OFF のときも開けるが、ruleset は通常モードと同じ phase_intermediate。
+func _open_freetext_modal() -> void:
+	if game_over or rewind_overlay_active:
+		return
+	if freetext_modal_window != null:
+		freetext_modal_window.grab_focus()
+		return
+	var win := Window.new()
+	win.title = "無辞書詠唱 — フルテキスト入力 (Submit で詠唱、Esc で閉じる)"
+	win.size = Vector2i(720, 320)
+	win.transient = true
+	win.exclusive = true
+	win.close_requested.connect(_close_freetext_modal)
+	var root := VBoxContainer.new()
+	root.anchor_right = 1.0
+	root.anchor_bottom = 1.0
+	root.offset_left = 24
+	root.offset_top = 24
+	root.offset_right = -24
+	root.offset_bottom = -24
+	root.add_theme_constant_override("separation", 14)
+	win.add_child(root)
+	var head := Label.new()
+	var mode_str: String = "[最厳 ruleset]" if Lexicon.freetext_mode else "[通常 ruleset]"
+	head.text = "無辞書詠唱 %s — word_id を空白区切りで入力（格は : 区切り、例: meida fjandi:acc）" % mode_str
+	head.add_theme_font_size_override("font_size", 14)
+	head.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(head)
+	var line := LineEdit.new()
+	line.placeholder_text = "meida fjandi:acc"
+	line.add_theme_font_size_override("font_size", 20)
+	line.custom_minimum_size = Vector2(0, 40)
+	root.add_child(line)
+	_freetext_line_edit = line
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 12)
+	root.add_child(btn_row)
+	var submit_btn := Button.new()
+	submit_btn.text = "Submit (詠唱)"
+	submit_btn.pressed.connect(_on_freetext_submit)
+	btn_row.add_child(submit_btn)
+	line.text_submitted.connect(func(_t): _on_freetext_submit())
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Esc (閉じる)"
+	cancel_btn.pressed.connect(_close_freetext_modal)
+	btn_row.add_child(cancel_btn)
+	var hint := Label.new()
+	hint.text = "ヒント: 未知綴り (例: framr) は word_id null で渡る → 暴発確率に unknown_word 倍率が乗る予定 (Validator 統合は INC-5)"
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(hint)
+	add_child(win)
+	win.popup_centered()
+	line.grab_focus()
+	freetext_modal_window = win
+
+
+func _close_freetext_modal() -> void:
+	if freetext_modal_window != null:
+		freetext_modal_window.queue_free()
+		freetext_modal_window = null
+	_freetext_line_edit = null
+
+
+func _on_freetext_submit() -> void:
+	if _freetext_line_edit == null:
+		return
+	var raw: String = _freetext_line_edit.text
+	if raw.strip_edges().is_empty():
+		_close_freetext_modal()
+		return
+	# 無辞書モードでは最厳 ruleset、それ以外でも freetext 経路は通常 ruleset。
+	var ruleset_path: String = "res://data/grammar/phase_advanced.tres" if Lexicon.freetext_mode else "res://data/grammar/phase_intermediate.tres"
+	var ruleset: Resource = load(ruleset_path)
+	var word_lookup: Callable = Callable(Lexicon, "get_word") if Lexicon.has_method("get_word") else Callable()
+	var tokens_in: Array = SpellTokenizer.tokenize_freetext(raw, ruleset, word_lookup)
+	if tokens_in.is_empty():
+		_log("[color=#888]🔠 無辞書: 入力が空でした[/color]")
+		_close_freetext_modal()
+		return
+	# tokenize_freetext は既に resource を埋めるので、SpellEngine.cast の Tokenizer 再走を踏まないよう
+	# {word_id, case} だけ取り出して通常 cast に渡す（Tokenizer.tokenize がもう一度 lookup する）。
+	var clean_inputs: Array = []
+	for t in tokens_in:
+		clean_inputs.append({
+			"word_id": String(t.get("word_id", "")),
+			"case": String(t.get("case", "")),
+		})
+	var spatial_ctx = SPATIAL_CONTEXT.from_map_state(MapState)
+	var result: CastResult = SpellEngine.cast(clean_inputs, ruleset, {
+		"spatial_context": spatial_ctx,
+	})
+	var preview_words: Array = []
+	for t in clean_inputs:
+		preview_words.append(String(t.get("word_id", "?")))
+	_log("[color=#a0c8f0]🔠 無辞書詠唱: %s[/color]" % " ".join(preview_words))
+	_apply_cast_result(result)
+	_maybe_grant_combat_learning(clean_inputs, result)
+	# 詠唱コストは通常スロットと同じ近似で
+	var delta: float = 1.0 + 0.5 * float(clean_inputs.size())
+	_advance_world_time(delta)
+	_enemies_take_turn()
+	_close_freetext_modal()
+	queue_redraw()
+	_update_hud()
+
+
 ## INC-4 A/C: 巻き戻し発火。順序厳守 (04 §7):
 ##   1. Lexicon.snapshot_loop_delta()      — 「今ループで伸びた語」を確定
 ##   2. Lexicon.save_to_disk()              — 記憶を確定保存（reset の前）
@@ -1087,8 +1225,9 @@ func _update_hud() -> void:
 	for t in preview_tokens:
 		preview_words.append(String(t.get("word_id", "?")))
 	var preview_str: String = "(空)" if preview_words.is_empty() else " ".join(preview_words)
-	hud_label.text = "%s | 位置 %s 向き %s | 視界内 %d 体 %s | プレビュー: スロット %d [%s]\nWASD/矢印=移動(長押し可・斜め8方向)  Q/E=旋回  1-5=スロット詠唱(±45°扇)  Space=待機+HP回復  Tab=プレビュー切替  F=Spell Builder  Enter=階段/学習/碑文  R=öld renna aptr(任意巻き戻し)" % [
-		status, pos_str, facing_str, in_sight, mode, _active_preview_slot, preview_str
+	var ft_str: String = "[無辞書ON]" if Lexicon.freetext_mode else ""
+	hud_label.text = "%s %s | 位置 %s 向き %s | 視界内 %d 体 %s | プレビュー: スロット %d [%s]\nWASD/矢印=移動(長押し可・斜め8方向)  Q/E=旋回  1-5=スロット詠唱(±45°扇)  Space=待機+HP回復  Tab=プレビュー切替  F=Spell Builder  Enter=階段/学習/碑文  R=öld renna aptr(任意巻き戻し)  T=無辞書詠唱  F2=無辞書モード切替" % [
+		status, ft_str, pos_str, facing_str, in_sight, mode, _active_preview_slot, preview_str
 	]
 	_render_log()
 

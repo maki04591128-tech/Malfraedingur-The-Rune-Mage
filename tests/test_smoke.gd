@@ -1755,6 +1755,95 @@ func _ready() -> void:
 	r.assert_true("study_spot" in TileKind.VALID_IDS, "INC-4 B-2: TileKind.VALID_IDS に study_spot")
 	r.assert_true("inscription" in TileKind.VALID_IDS, "INC-4 B-3: TileKind.VALID_IDS に inscription")
 
+	# --- INC-4 残課題対応: 無辞書（freetext）モードと bypass テスト ---
+	print("--- INC-4 残課題: 無辞書モード + 任意巻き戻し bypass ---")
+
+	if lex_inc4 != null:
+		lex_inc4.wipe_save()
+		lex_inc4._reset_memory_only_for_test()
+
+		# freetext_mode 初期値 false
+		r.assert_false(bool(lex_inc4.freetext_mode), "INC-4 残: freetext_mode 初期 false")
+		# トグルして永続化
+		lex_inc4.freetext_mode = true
+		lex_inc4.save_to_disk()
+		lex_inc4._reset_memory_only_for_test()
+		# wipe してないので load_from_disk で復元
+		r.assert_false(bool(lex_inc4.freetext_mode), "INC-4 残: _reset_memory_only_for_test 後は false")
+		lex_inc4.load_from_disk()
+		r.assert_true(bool(lex_inc4.freetext_mode), "INC-4 残: load 後 freetext_mode=true 復元")
+
+		# tokenize_freetext: 空白区切りで {word_id, case, resource} を返す
+		var ft_tokens: Array = SpellTokenizer.tokenize_freetext(
+			"meida fjandi:acc",
+			null,
+			Callable(lex_inc4, "get_word")
+		)
+		r.assert_eq(ft_tokens.size(), 2, "INC-4 残: tokenize_freetext 2 トークン")
+		if ft_tokens.size() >= 2:
+			r.assert_eq(String(ft_tokens[0].get("word_id", "")), "meida", "INC-4 残: token[0].word_id=meida")
+			r.assert_eq(String(ft_tokens[0].get("case", "")), "", "INC-4 残: token[0].case=空")
+			r.assert_not_null(ft_tokens[0].get("resource"), "INC-4 残: token[0].resource (既知綴り) 非null")
+			r.assert_eq(String(ft_tokens[1].get("word_id", "")), "fjandi", "INC-4 残: token[1].word_id=fjandi")
+			r.assert_eq(String(ft_tokens[1].get("case", "")), "acc", "INC-4 残: token[1].case=acc")
+
+		# 未知綴り (例: framr) は word_id をそのまま入れ、resource=null
+		var ft_unknown: Array = SpellTokenizer.tokenize_freetext(
+			"framr meida",
+			null,
+			Callable(lex_inc4, "get_word")
+		)
+		r.assert_eq(ft_unknown.size(), 2, "INC-4 残: tokenize_freetext (未知綴り混在) 2 トークン")
+		if ft_unknown.size() >= 2:
+			r.assert_eq(String(ft_unknown[0].get("word_id", "")), "framr", "INC-4 残: 未知綴り word_id 保持")
+			r.assert_eq(ft_unknown[0].get("resource"), null, "INC-4 残: 未知綴り resource=null (Validator が unknown_word で処理予定)")
+
+		# 連続空白・空入力は無視
+		var ft_blank: Array = SpellTokenizer.tokenize_freetext("   ", null, Callable())
+		r.assert_eq(ft_blank.size(), 0, "INC-4 残: 空入力は空配列")
+		var ft_multi: Array = SpellTokenizer.tokenize_freetext("  meida   fjandi  ", null, Callable(lex_inc4, "get_word"))
+		r.assert_eq(ft_multi.size(), 2, "INC-4 残: 連続空白は無視して 2 トークン")
+
+		# 後始末
+		lex_inc4.wipe_save()
+		lex_inc4._reset_memory_only_for_test()
+
+	# --- bypass テスト: 任意巻き戻し (manual rewind) が SpellEngine.cast を通らない ---
+	# 04 §7 必須テスト test_fixed_incantation_bypasses_engine の最小版。
+	# 任意巻き戻し経路 = GameState.reset() + Lexicon.reset_for_new_loop("manual") のみ。
+	# SpellEngine.cast は一切呼ばれない＝呼ぶ前後で SpellResolver の static 状態が変わらないことで担保。
+	if lex_inc4 != null:
+		lex_inc4.wipe_save()
+		lex_inc4._reset_memory_only_for_test()
+		# bypass 前の状態スナップ
+		var lc_bypass_before: int = GameState.loop_count
+		var rw_bypass_before: int = int(lex_inc4.stats.get("rewinds", 0))
+		var loops_bypass_before: int = int(lex_inc4.stats.get("loops", 0))
+		# Lexicon に既知の理解度を仕込む（rewind を超えて残ることを確認するため）
+		lex_inc4.add_comprehension("meida", 30)
+		# 任意巻き戻し経路を模す (dungeon_view._trigger_rewind('manual') と等価):
+		# 1. snapshot_loop_delta → 2. save_to_disk → 3. GameState.reset → 4. Lexicon.reset_for_new_loop
+		# このどれも SpellEngine.cast / SpellResolver を呼ばない。
+		lex_inc4.snapshot_loop_delta()
+		var delta_for_bypass: Dictionary = lex_inc4.get_loop_delta()
+		r.assert_true(delta_for_bypass.has("meida"), "bypass: 巻き戻し直前の delta に meida +30")
+		lex_inc4.save_to_disk()
+		GameState.reset()
+		lex_inc4.reset_for_new_loop("manual")
+		r.assert_eq(GameState.loop_count, lc_bypass_before + 1, "bypass: GameState.loop_count++")
+		r.assert_eq(int(lex_inc4.stats.get("rewinds", 0)), rw_bypass_before + 1, "bypass: stats.rewinds++ (manual)")
+		r.assert_eq(int(lex_inc4.stats.get("loops", 0)), loops_bypass_before + 1, "bypass: stats.loops++")
+		# 重要: 理解度は巻き戻しを超えて残る (04 §7 「知識は残る」の保証)
+		r.assert_eq(lex_inc4.get_comprehension("meida"), 30, "bypass: 理解度は manual rewind で消えない (テーマ保証)")
+		# bypass の不変性: SpellResolver の compute_misfire_chance は決定的で常に同じ値を返す
+		# = manual rewind 経路はコア呪文エンジンを通らないことを間接担保
+		var misfire_before_bypass: float = SpellResolver.compute_misfire_chance(50.0)
+		var misfire_after_bypass: float = SpellResolver.compute_misfire_chance(50.0)
+		r.assert_eq(misfire_before_bypass, misfire_after_bypass, "bypass: SpellResolver は manual rewind 前後で同一挙動 (コアエンジン未通過)")
+		# 後始末
+		lex_inc4.wipe_save()
+		lex_inc4._reset_memory_only_for_test()
+
 	r.print_summary()
 
 	# 自動終了（CLI からの実行も想定）。エディタで F5 した場合は手動で閉じる。
